@@ -1,0 +1,34 @@
+# CI for this repository itself (not the workflow that gets planted into other projects;
+# that one is skills/portable-verification/references/ci-github-actions.yml).
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests with an explicit bash (version is printed in the log)
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then BASH_BIN=/bin/bash; else BASH_BIN=$(command -v bash); fi
+          export BASH_BIN
+          "$BASH_BIN" --version | head -n 1
+          "$BASH_BIN" tests/run.sh
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (warnings and above)
+        run: |
+          shellcheck --version
+          shellcheck --severity=warning \
+            skills/portable-verification/scripts/*.sh install.sh build/*.sh \
+            tests/*.sh tests/scenarios/*.sh

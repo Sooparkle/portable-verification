@@ -65,18 +65,29 @@ copy_tree() {
   else echo "  skipped  ${2#$target/} (differs; rerun with --force to replace)"; fi
 }
 
+# stage_skill DEST: copy exactly the files that make up the skill folder
+stage_skill() {
+  mkdir -p "$1"
+  cp "$SRC/SKILL.md" "$SRC/SOURCES.md" "$SRC/VERSION" "$1/"
+  cp -R "$SRC/references" "$SRC/scripts" "$1/"
+}
+
+hash_file() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1
+  else echo unavailable; fi
+}
+
 echo "plant: skill folder"
 for d in $skill_dirs; do
   dest="$target/$d/$NAME"
-  if [ -e "$dest" ] && [ "$force" = 1 ]; then rm -rf "$dest"; fi
+  verb=created
+  if [ -e "$dest" ] && [ "$force" = 1 ]; then rm -rf "$dest"; verb=replaced; fi
   if [ ! -e "$dest" ]; then
-    mkdir -p "$dest"
-    cp "$SRC/SKILL.md" "$SRC/SOURCES.md" "$dest/"
-    cp -R "$SRC/references" "$SRC/scripts" "$dest/"
-    echo "  created  $d/$NAME"
+    stage_skill "$dest"
+    printf '  %-8s %s\n' "$verb" "$d/$NAME"
   else
-    tmp=$(mktemp -d); mkdir -p "$tmp/$NAME"
-    cp "$SRC/SKILL.md" "$SRC/SOURCES.md" "$tmp/$NAME/"; cp -R "$SRC/references" "$SRC/scripts" "$tmp/$NAME/"
+    tmp=$(mktemp -d); stage_skill "$tmp/$NAME"
     if diff -rq "$tmp/$NAME" "$dest" >/dev/null 2>&1; then echo "  same     $d/$NAME"
     else echo "  skipped  $d/$NAME (differs; rerun with --force to replace)"; fi
     rm -rf "$tmp"
@@ -128,6 +139,22 @@ else
   echo "  created  .verification/checks.txt"
 fi
 
+# Install record: what was planted and the hashes of the files that are on disk now.
+# Informational only. It lets you spot a local edit or an old copy; anyone who can
+# write the files can also rewrite this record, so it is not an integrity guarantee.
+{
+  echo "# portable-verification install record (informational, not an integrity guarantee)"
+  echo "plant_version=$(tr -d '[:space:]' < "$SRC/VERSION")"
+  echo "source_commit=$(git -C "$SRC" rev-parse HEAD 2>/dev/null || echo unknown)"
+  echo "sha256  .verification/verify.sh  $(hash_file "$V/verify.sh")"
+  for d in $skill_dirs; do
+    for f in SKILL.md VERSION scripts/verify.sh scripts/plant.sh; do
+      [ -f "$target/$d/$NAME/$f" ] && echo "sha256  $d/$NAME/$f  $(hash_file "$target/$d/$NAME/$f")"
+    done
+  done
+} > "$V/.plant-manifest"
+echo "  wrote    .verification/.plant-manifest"
+
 gi="$target/.gitignore"
 if grep -qxF ".verification/evidence/" "$gi" 2>/dev/null; then echo "  kept     .gitignore entry"
 else
@@ -168,4 +195,5 @@ plant: done. Next:
   2. Fill .verification/feature-map.md for the 3-5 features users depend on most.
   3. Run: bash .verification/verify.sh   (first run reports NEEDS_REVIEW until the new files are committed)
   4. Commit the skill folder, .verification/ (evidence is ignored), and .gitignore.
+  Update later: run plant.sh from a newer release with --force. checks.txt and feature-map.md are kept.
 EOF

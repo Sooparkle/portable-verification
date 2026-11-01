@@ -27,6 +27,11 @@ DEFAULT_FLAG_REGEX="$DEFAULT_FLAG_REGEX"'|(^|/)\.verification/(checks\.txt|verif
 FLAG_PATH_REGEX="${FLAG_PATH_REGEX:-$DEFAULT_FLAG_REGEX}"
 
 ROOT="${VERIFY_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+# A relative checks path is taken from the current directory if it exists there,
+# otherwise from the repository root (so running from a subdirectory works).
+if [ ! -f "$CHECKS_FILE" ]; then
+  case "$CHECKS_ARG" in /*) ;; *) [ -f "$ROOT/$CHECKS_ARG" ] && CHECKS_FILE="$ROOT/$CHECKS_ARG" ;; esac
+fi
 if ! cd "$ROOT"; then echo "STATUS: BLOCKED (cannot enter $ROOT)"; exit 3; fi
 
 EVIDENCE_ROOT="${EVIDENCE_ROOT:-.verification/evidence}"
