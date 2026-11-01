@@ -11,14 +11,16 @@
 |---|---|
 | 전체 테스트 (macOS, 환경 3종) | 5회 실행, 실패 0건. 환경 A·B 345개 통과, 환경 C 344개 통과(교차 검증 1개 건너뜀). 커밋 d66da82에서 최종 1회 재실행: 345 ok, 0 not ok (Python 3.9.6 + jsonschema 4.25.1, 작업 트리에 보고서 외 변경 없음) |
 | 같은 환경 반복 실행 (flaky 확인) | 환경 A를 3회 실행(1회는 시뮬레이션 부하와 동시에), 3회 모두 345/345. 불안정 테스트 0건 |
-| 적대적 매트릭스 A1–A14 (계약 문서 8절) | 14개 항목 모두 고정된 기대값과 일치. 어떤 공격도 PASS를 얻지 못함 |
+| 적대적 매트릭스 A1–A14 (계약 문서 8절) | 14개 항목 모두 고정된 기대값과 일치. **단, 매트릭스에 없는 공격(실행 중 ref 사본 변조)으로 trusted PASS가 가능함이 외부 리뷰에서 드러남(13절)**. A1c는 설계상 local PASS가 나옴 |
 | 변이 검사 (규칙을 일부러 망가뜨리면 테스트가 실패하는가) | 최종 코드에서 19개 일괄 재실행, 19개 모두 검출. 개발 중 처음에는 1개(설치기 사전 점검 생략)가 검출되지 않아 테스트를 추가함 |
 | 게이트 규칙 시뮬레이션 (실제 스케줄링·판정 함수 사용) | 설계 문서 확률과 일치 (200만 회, |z| ≤ 1.01; 8절) |
 | 사용자 흐름 e2e (설치 → 채우기 → verify → 브랜치에서 회귀·채점기 변조 → trusted 게이트) | 8개 판정 모두 기대값과 일치 (`reports/e2e-walkthrough.sh`, 저장소 안에서도 실행해 8/8) |
 | shellcheck 0.11.0 (`--severity=warning`) | 경고 0건 |
 | 이번 테스트 라운드에서 찾아 고친 결함 | 4건 (아래 6절) |
 
-결론: **로컬 macOS 기준으로는 계약 문서의 약속이 테스트로 지켜집니다.** 그러나 GitHub Actions(Linux, CI 템플릿), 실제 LLM 에이전트, 저장소 보호 설정은 한 번도 실행하지 않았습니다(7절). 이 상태로는 "초기 구현"이며, 공식 평가 게이트로 쓸 수 있다는 근거는 아직 없습니다.
+> **정정 (외부 리뷰 후):** 아래 결론은 철회합니다. Codex 리뷰에서 trusted 실행 중 어댑터가 추출된 ref 채점기를 바꿔 **trusted PASS를 얻는 경로**가 지적됐고, 재현됐습니다(13절). "어떤 공격도 PASS를 얻지 못함", "7개 불변조건이 보장", "설치의 원자성"은 과장이었습니다.
+
+~~결론: 로컬 macOS 기준으로는 계약 문서의 약속이 테스트로 지켜집니다.~~ (철회) 그러나 GitHub Actions(Linux, CI 템플릿), 실제 LLM 에이전트, 저장소 보호 설정은 한 번도 실행하지 않았습니다(7절). 이 상태로는 "초기 구현"이며, 공식 평가 게이트로 쓸 수 있다는 근거는 아직 없습니다.
 
 ## 2. 환경
 
@@ -62,7 +64,7 @@
 
 | # | 공격 | 기대 | 결과 | 테스트 |
 |---|---|---|---|---|
-| A1a | 작업 트리의 채점기를 항상 pass로 교체, 실제 출력은 실패 (trusted) | FAIL(1) | FAIL(1), `assets_verified=false`, `graded_with_ref_copies=true` | `test_a1a_*` |
+| A1a | 작업 트리의 채점기를 known_bad만 알아보는 속임수 채점기로 교체, 실제 출력은 실패 (trusted) | FAIL(1) | FAIL(1), `assets_verified=false`, `graded_with_ref_copies=true` | `test_a1a_*` |
 | A1b | 같은 교체, 실제 출력은 성공 (trusted) | NEEDS_REVIEW(2) | 2, 변경 파일명 표시 | `test_a1b_*` |
 | A1c | known_bad만 알아보고 나머지는 통과시키는 속임수 채점기 (local) | 게이트는 `local (unofficial)` 표기, verify.sh NEEDS_REVIEW(2) | 게이트 0 + 표기 확인, verify.sh 2 | `test_a1c_*`, e2e 7단계 |
 | A2 | `policy_coverage` 누락 | BLOCKED(3) | 3 (스키마 단계에서 `evidence_invalid`로 먼저 걸림) | `test_a2_*` |
@@ -189,3 +191,39 @@ python3 -m venv /tmp/pe-venv && /tmp/pe-venv/bin/pip install jsonschema
 BASH_BIN=/bin/bash PYTHON_BIN=/tmp/pe-venv/bin/python bash tests/run.sh   # 교차 검증 포함
 bash build/check-release.sh v0.1.0 --rebuild                              # 릴리스 사슬 검사 (기존 릴리스)
 ```
+
+## 13. 외부 리뷰(Codex) 결과와 재현
+
+- 리뷰 원문: `reports/codex-review-v0.2.0.md` (codex-cli 0.166.0, 읽기 전용 샌드박스)
+- **Codex 판정: release after fixes** (수정 후 릴리스). "trusted PASS가 제공하는 보장보다 문서가 더 강하다."
+- 아래 "재현"은 Codex의 주장을 제가 임시 프로젝트에서 다시 실행해 확인한 결과입니다(저장소는 바꾸지 않음).
+
+| # | 지적 (Codex 심각도) | 재현 | 결과 |
+|---|---|---|---|
+| B1 | trusted 실행 중 어댑터가 임시 폴더에 추출된 ref 채점기를 고쳐 trusted PASS 획득 (높음) | **재현됨** | 실제 출력은 실패(`ok=False`)인데 `STATUS: PASS`, exit 0, 7개 불변조건 모두 `true`. 어댑터는 `TMPDIR`을 받고 같은 사용자 권한이라 `pe-ref-*`를 찾아 쓸 수 있음. 같은 권한으로 `trials.jsonl`도 지울 수 있음 |
+| B2 | compare가 두 번째 manifest의 `decision_fixed_at`을 보지 않음 (높음) | **재현됨** | `compare(A, B[fixed_at=2099])` → COMPARABLE(0), 순서를 바꾸면 BLOCKED(3). `decision_sha256`은 같아도 manifest의 시각 필드가 서로 달라짐 |
+| B3 | BLOCKED여야 할 오류가 traceback·FAIL로 끝남 (중간) | **재현됨** (env null) / 코드로 확인 (나머지) | system manifest `"env": null` → `TypeError` traceback, exit 1. evidence 파일 쓰기 `OSError` 미변환, FAIL 상태에서 기록 실패 시 FAIL 유지(계약은 BLOCKED) |
+| B4 | 대상에 `.eval`이 일반 파일이면 사전 점검 통과 후 반쪽 설치 (중간) | **재현됨** (사전 점검 통과까지) | eval `plant.sh --check` exit 0. 이후 verification만 설치되고 eval이 실패하는 흐름은 추론 |
+| B5 | `evidence_schema_verified`가 실제 기록과 다르게 true (중간) | **재현됨** | `evidence_invalid` 시도 후 재시도 성공 → `true`. 계약 문구("every trial's evidence")와 다름. 시간 초과 시행에는 검증된 증거 자체가 없음 |
+| B6 | check-release가 기대 CI 작업 목록·원격 태그 SHA·소스–배포물 일치를 강제하지 않음 (중간) | 코드로 확인 | 맞음. 현재 커밋의 install.sh 해시는 `UNSET`(릴리스 때 채움) |
+| B7 | 검증기 의미 불완전 (중간) | **재현됨** 3/3 | `items:false` 무시, `1.0`을 정수로 인정하지 않음(JSON Schema와 다름), `NaN` 허용 |
+| B8 | `eval.sh`가 unittest 프로세스 종료 코드를 보지 않음 (중간) | 코드로 확인 | 맞음. 출력 패턴만 셈 |
+| B9 | 계약의 trial별 grader 해시·어댑터 해시가 `trials.jsonl`에 없음 (낮음) | 코드로 확인 | 맞음. `adapter_sha`는 계산만 하고 기록하지 않음 |
+
+A절에서 받아들인 보고서 정정:
+- A1a의 교체물은 "항상 pass"가 아니라 known_bad만 알아보는 속임수 채점기다(5절 표 수정).
+- A1c는 설계상 local PASS를 낸다. "어떤 공격도 PASS를 얻지 못함"은 문자 그대로 틀렸다.
+- A8의 크기 초과 테스트는 금지 필드(`pad`)도 함께 넣어서, 크기 제한만 따로 검증하지 못한다. 변이 목록에 "크기 제한 제거"가 없었다.
+- A3의 `unknown` 관측기 상태는 테스트하지 않았다.
+- 채점기 단위 자기 테스트는 안전 게이트만 돌릴 때도 normal 기준의 채점기까지 요구해, 불필요하게 BLOCKED가 될 수 있다.
+- 7개 불변조건 테스트는 플래그 7개가 `true`인지 볼 뿐, 각 조건을 독립적으로 검증하지 않는다.
+- 매트릭스·변이·시뮬레이션 실행 로그는 저장소에 없어 리뷰어가 재확인할 수 없었다(변이 실행기와 시뮬레이션 스크립트는 저장소 밖에 있음).
+
+### 수정 방향 (제안, 미착수)
+
+| 우선 | 항목 | 방향 |
+|---|---|---|
+| 1 | B1 | 평가 자산(채점기 포함)을 시작 시 메모리에 읽어 두고, 채점할 때마다 새 임시 디렉터리에 그 바이트로 다시 써서 실행. 시행 기록도 메모리에 모아 마지막에 쓰고 `result.json`에 해시를 남김. 같은 사용자 권한에서는 완전한 격리가 불가능하므로(`setsid`로 살아남은 프로세스 등), 공식 판정의 전제를 "SUT를 다른 사용자/컨테이너에서 실행"으로 문서에 명시 |
+| 2 | B2, B3, B5 | 두 manifest 모두 검사, 모든 I/O·형식 오류를 BLOCKED로, 증거 불변조건을 "모든 시도"로 바꾸거나 계약 문구를 정확히 |
+| 3 | B4, B7, B8 | 사전 점검에 경로 종류 검사, 검증기 수정(`items:false`, 정수값 실수, `NaN` 거부), `eval.sh`에서 종료 코드 확인 |
+| 4 | B6, B9, 테스트 보강 | 기대 CI 작업 목록·원격 태그 확인, trial별 해시 기록, A8 크기 단독 테스트·A3 `unknown` 테스트·불변조건 개별 테스트, 변이 실행기와 시뮬레이션 스크립트를 저장소에 포함 |
