@@ -178,10 +178,10 @@ exec 7<&-
 
 # ---- interruption -> NOT RUN ------------------------------------------
 d=$(repo_with_checks interrupt 'slow yes sleep 2')
-pushd "$d" >/dev/null
+pushd "$d" >/dev/null || exit 1
 "$BASH_BIN" "$VERIFY" > "$WORK/int.out" 2>&1 < /dev/null &
 pid=$!
-popd >/dev/null
+popd >/dev/null || exit 1
 sleep 1; kill -TERM "$pid" 2>/dev/null
 wait "$pid"; code=$?
 assert_eq "SIGTERM ends with NOT RUN (exit 4)" 4 "$code"
