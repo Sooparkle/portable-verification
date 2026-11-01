@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-01)
 
 ### Baseline
 The skill folder started as the author's draft, imported unchanged in the first commit
@@ -35,7 +35,11 @@ The skill folder started as the author's draft, imported unchanged in the first 
 - Archive build is byte-identical across two builds made one second apart from different working directories
   (same machine, same tar/gzip).
 
+### Verified after release (tag v0.1.0, commit 3653674)
+- GitHub Actions: ubuntu bash 5.2.21 166 ok; macOS bash 3.2.57 165 ok; shellcheck 0.9.0 clean.
+- install.sh from the public tag URL: sha256 ok, plant ran, verify.sh went NEEDS_REVIEW then PASS after commit.
+
 ### Known gaps
-- Not run: Windows, real `timeout`/`gtimeout` binaries on macOS (a stand-in that exits 124 is used),
-  `agentskills validate`, GitHub Actions (the CI files have not run yet), the planted
+- Not run: Windows, real `timeout`/`gtimeout` binaries on macOS (a stand-in that exits 124 is used; Ubuntu CI uses the real one),
+  `agentskills validate`, the planted
   `references/ci-github-actions.yml` workflow, loading the skill inside Claude Code / Codex / Cursor / Copilot.

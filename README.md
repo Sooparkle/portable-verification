@@ -119,13 +119,15 @@ Run `BASH_BIN=/bin/bash bash tests/run.sh` yourself; it prints the bash version 
 
 | Item | Status |
 |---|---|
-| Scenario tests (verify.sh, plant.sh, install.sh, build) on macOS with the system bash 3.2.57 | run, see CHANGELOG for the date's result |
-| Same tests on Linux / newer bash | not run locally; run by CI once the repository is on GitHub |
-| Real `timeout` binary | not run (stand-in that exits 124 is used) |
-| shellcheck | not run locally (not installed); CI job |
+| Scenario tests on macOS, system bash 3.2.57 (locally and GitHub Actions `macos-latest`) | run: 165 ok, 0 not ok |
+| Scenario tests on Ubuntu, bash 5.2.21 (GitHub Actions `ubuntu-latest`) | run: 166 ok, 0 not ok (one extra check uses the real `timeout`) |
+| Real `timeout` binary | run on Ubuntu only; on macOS a stand-in that exits 124 is used |
+| shellcheck 0.9.0, warnings and above (GitHub Actions) | run: clean |
+| Install of v0.1.0 from the public release URL into a scratch project, then `verify.sh` NEEDS_REVIEW, commit, PASS | run once, on macOS |
 | `agentskills validate` | not run |
-| GitHub Actions workflows (this repo's CI and the planted one) | not run yet |
+| The workflow planted into projects (`references/ci-github-actions.yml`) | not run |
 | Loading the skill inside each agent tool | not tested |
+| Windows | not tested |
 
 ## Sources and license
 

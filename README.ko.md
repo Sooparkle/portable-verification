@@ -119,13 +119,15 @@ bash .verification/verify.sh
 
 | 항목 | 상태 |
 |---|---|
-| macOS 시스템 bash 3.2.57에서 시나리오 테스트(verify.sh, plant.sh, install.sh, build) | 실행함, 결과는 CHANGELOG 참고 |
-| Linux / 더 새로운 bash에서 같은 테스트 | 로컬에서는 실행 안 함. 저장소를 GitHub에 올린 뒤 CI가 실행 |
-| 실제 `timeout` 바이너리 | 실행 안 함(종료 코드 124를 내는 대체 스크립트 사용) |
-| shellcheck | 로컬 실행 안 함(미설치). CI job이 실행 |
+| macOS 시스템 bash 3.2.57에서 시나리오 테스트(로컬과 GitHub Actions `macos-latest`) | 실행함: 165 ok, 0 not ok |
+| Ubuntu bash 5.2.21에서 시나리오 테스트(GitHub Actions `ubuntu-latest`) | 실행함: 166 ok, 0 not ok (실제 `timeout`을 쓰는 검사 1개 추가) |
+| 실제 `timeout` 바이너리 | Ubuntu에서만 실행. macOS에서는 종료 코드 124를 내는 대체 스크립트 사용 |
+| shellcheck 0.9.0, 경고 이상 (GitHub Actions) | 실행함: 통과 |
+| v0.1.0을 공개 릴리스 URL에서 임시 프로젝트에 설치 후 `verify.sh`: NEEDS_REVIEW, 커밋, PASS | macOS에서 1회 실행 |
 | `agentskills validate` | 실행 안 함 |
-| GitHub Actions 워크플로(이 저장소의 CI와 심어지는 워크플로) | 아직 실행 안 함 |
+| 프로젝트에 심어지는 워크플로(`references/ci-github-actions.yml`) | 실행 안 함 |
 | 각 에이전트 도구에서 스킬 로딩 | 시험 안 함 |
+| Windows | 시험 안 함 |
 
 ## 출처와 라이선스
 
