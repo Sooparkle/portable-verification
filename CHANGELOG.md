@@ -41,20 +41,35 @@ table on top; what the tool promises is fixed in `docs/contracts.md`.
 - Not implemented: 3.1 state transitions, 3.3 blind-set operation, 3.4 rubrics, 6.3 judges, 7.2 non-inferiority /
   superiority / equivalence / cost tests, 7.4 portability checks.
 
-### Verified (macOS, Darwin 25.5.0 arm64, bash 3.2.57; details in reports/test-report-v0.2.0.md)
-- Full suite five times, 0 failures: Python 3.9.6 + jsonschema 4.25.1 **345 ok** (three runs), Python 3.13.1 +
-  jsonschema 4.26.0 **345 ok**, Python 3.9.6 without jsonschema **344 ok** (the cross-check is skipped there).
-  Per scenario: consistency 16, eval 86, install 89, plant-eval 39, plant 59, verify 56.
-- The schema validator agrees with `jsonschema` on every generated mutant of the four schemas.
-- Mutation checks re-run on the final code: 19 of 19 deliberate defects caught (15 in pe.py, 1 in verify.sh, 3 in
-  install.sh). The first version of the install tests did **not** catch a skipped pre-flight check; a test was added.
-- Seeded simulation through the real scheduling and decision functions matches the design's gate probabilities
-  (2,000,000 samples per false-block condition, |z| <= 1.01).
-- End-to-end walk-through (`reports/e2e-walkthrough.sh`): 8 of 8 expected outcomes.
-- shellcheck 0.11.0 (`--severity=warning`): no findings. `build/check-release.sh v0.1.0 --rebuild`: OK.
-- Defects found by this testing and fixed: relative adapter paths did not work; a `severity: critical` label alone
-  silently kept a case out of the safety gate (now a warning); an always-pass grader could hide behind a second
-  criterion (now grader-level self-test coverage); the install tests could not see a skipped pre-flight check.
+### Fixed after the external (Codex) review (reports/codex-review-v0.2.0.md)
+- **Trusted PASS could be forged during the run**: an adapter could rewrite the extracted REF grader after the
+  self-test. Graders now run from the bytes loaded at the start, the assets used for grading are re-hashed before
+  every grading step and at the end (any change: BLOCKED), and trial records/evidence are kept in memory and written
+  at the end with their hashes in `result.json`. The adapter gets a private `TMPDIR`. This is detection, not
+  isolation; the contracts now say an official verdict also needs the system under test to run as another OS user
+  or in a container.
+- `compare` checks the decision time of both manifests and requires `decision_fixed_at` to be equal.
+- Unexpected errors, a non-object `env`/`system`/`budget` in the system manifest, and I/O errors are BLOCKED
+  (no traceback); a failed artifact write is BLOCKED even when the case failed (BLOCKED > FAIL).
+- `evidence_schema_verified` is false if any attempt produced invalid evidence, also one that a re-run recovered.
+- `plant.sh --check` (both skills) rejects paths of the wrong kind (`.eval` as a file, ...) before anything is written.
+- JSON is read strictly (no `NaN`/`Infinity`); `1.0` counts as an integer; `items: false` is supported.
+- Self-test coverage is computed over the criteria graded in this run (a safety-only run no longer needs the normal
+  graders); the severity warning is printed also when nothing is selected.
+- `trials.jsonl` records `adapter_sha256` and per-criterion `grader_sha256`.
+- `check-release.sh`: the tag on origin must be the same commit; every expected CI job must be present (the list is
+  kept in step with `ci.yml` by a test); the content of each asset must equal `skills/<skill>/` at the tag.
+- Tests: the unittest exit code and test count are now checked by `tests/scenarios/eval.sh`; the oversize-evidence test
+  isolates the size cap; attack tests now assert that the attack actually happened.
+
+### Verified (macOS, Darwin 25.5.0 arm64, bash 3.2.57; details and logs in reports/)
+- After the review fixes: full suite five times, 0 failures (376 ok; 375 without jsonschema); after three more tests,
+  378 ok. Python 3.9.6 and 3.13.1, jsonschema 4.25.1 / 4.26.0 for the cross-check.
+- Mutation checks on the final code: 28 of 29 caught. The survivor ("catch-all removed in compare") is not reached by
+  the test meant for it; recorded in the report, not fixed.
+- Seeded simulation matches the design's gate probabilities (2,000,000 samples per condition, |z| <= 1.01).
+- End-to-end walk-through 8/8; shellcheck 0.11.0 no findings; `check-release.sh v0.1.0` OK.
+- No second external review was done (decision of the maintainer); the fixes are verified by the tests above only.
 
 ### Not run / known gaps
 - The workflows of this repository and the planted workflows (`ci-github-actions.yml`, `ci-eval-trusted.yml`) have not run on GitHub.

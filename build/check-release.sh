@@ -1,25 +1,32 @@
 #!/usr/bin/env bash
 # Check the release chain of a published tag. Run it after the release is published.
 #
-# Usage: bash build/check-release.sh vX.Y.Z [--rebuild] [--require-identical]
+# Usage: bash build/check-release.sh vX.Y.Z [--expect-checks "a;b;..."] [--rebuild] [--require-identical]
+#   (job names contain commas, e.g. "test (ubuntu-latest, 3.9)", so the list separator is ";")
 #
 # Checks (any failure = exit 1):
-#   1. the tag resolves to a commit, and every CI check run on exactly that commit succeeded
-#   2. install.sh as of the tag has pinned sha256 values (no UNSET) and a VERSION equal to the tag
-#   3. the release has the archive of each pinned skill, and sha256(downloaded asset) == the pin
-#   4. (--rebuild) the tag is rebuilt locally; reports whether the bytes are identical to the asset.
+#   1. the local tag and the tag on origin point to the same commit
+#   2. every expected CI check run exists on exactly that commit, and every check run there succeeded
+#      (default list = EXPECTED_CHECKS below, which a test keeps in step with .github/workflows/ci.yml)
+#   3. install.sh as of the tag has pinned sha256 values (no UNSET) and a VERSION equal to the tag
+#   4. the release has the archive of each pinned skill, and sha256(downloaded asset) == the pin
+#   5. the content of each asset (files, bytes, executable bits) equals skills/<skill>/ at the tag
+#   6. (--rebuild) the tag is rebuilt locally; reports whether the archive bytes are identical.
 #      Different tar/gzip implementations can give different bytes, so a difference is a warning
-#      unless --require-identical is given.
+#      unless --require-identical is given. Check 5 already ties the asset to the tag's source.
 # Needs: git, gh (authenticated), tar, shasum or sha256sum. Reads only; changes nothing in the repository.
 set -uo pipefail
 
+EXPECTED_CHECKS="lint;test (ubuntu-latest, 3.9);test (ubuntu-latest, 3.13);test (macos-latest, 3.9);test (macos-latest, 3.13)"
+
 tag=${1:-}; shift || true
-rebuild=0; require_identical=0
-for a in "$@"; do
-  case "$a" in
-    --rebuild) rebuild=1 ;;
-    --require-identical) rebuild=1; require_identical=1 ;;
-    *) echo "check-release: unknown option: $a" >&2; exit 2 ;;
+rebuild=0; require_identical=0; expected=$EXPECTED_CHECKS
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --rebuild) rebuild=1; shift ;;
+    --require-identical) rebuild=1; require_identical=1; shift ;;
+    --expect-checks) [ $# -ge 2 ] || { echo "check-release: --expect-checks needs a value" >&2; exit 2; }; expected=$2; shift 2 ;;
+    *) echo "check-release: unknown option: $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$tag" ] || { echo "usage: check-release.sh vX.Y.Z [--rebuild] [--require-identical]" >&2; exit 2; }
@@ -58,12 +65,25 @@ for p in $pins; do
   [ "${p#*:}" = UNSET ] && fail "${p%%:*} is pinned to UNSET at $tag"
 done
 
-# 1. CI on exactly the tagged commit
-runs=$(gh api "repos/$repo/commits/$commit/check-runs?per_page=100" --jq '.check_runs[] | .name + " " + (.conclusion // "pending")' 2>/dev/null)
+# 1. the tag on origin is the same commit
+remote=$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}" 2>/dev/null)
+remote_commit=$(echo "$remote" | awk '$2 ~ /\^\{\}$/ {print $1}')
+[ -n "$remote_commit" ] || remote_commit=$(echo "$remote" | awk 'NR==1 {print $1}')
+if [ -z "$remote_commit" ]; then fail "tag $tag not found on origin"
+elif [ "$remote_commit" = "$commit" ]; then pass "tag on origin points to the same commit"
+else fail "tag on origin points to $remote_commit, local tag to $commit"; fi
+
+# 2. CI on exactly the tagged commit: every expected job is there, and everything there succeeded
+runs=$(gh api "repos/$repo/commits/$commit/check-runs?per_page=100" --jq '.check_runs[] | .name + "\t" + (.conclusion // "pending")' 2>/dev/null)
 if [ -z "$runs" ]; then fail "no CI check runs found for $commit"
 else
-  echo "$runs" | sed 's/^/        CI: /'
-  if echo "$runs" | grep -qv ' success$'; then fail "not every check run on $commit succeeded"; else pass "all CI check runs on the tagged commit succeeded"; fi
+  printf '%s\n' "$runs" | sed 's/^/        CI: /'
+  if printf '%s\n' "$runs" | grep -qv "$(printf '\t')success$"; then fail "not every check run on $commit succeeded"; else pass "every check run on the tagged commit succeeded"; fi
+  missing=""
+  IFS=';'; for want in $expected; do
+    printf '%s\n' "$runs" | cut -f1 | grep -qxF "$want" || missing="$missing [$want]"
+  done; unset IFS
+  [ -z "$missing" ] && pass "all expected CI jobs are present ($expected)" || fail "expected CI jobs missing:$missing"
 fi
 
 # 3. release assets against the pins
@@ -73,6 +93,18 @@ for p in $pins; do
   if gh release download "$tag" --repo "$repo" -p "$asset" -D "$tmp" >/dev/null 2>&1 && [ -f "$tmp/$asset" ]; then
     got=$(sha_of "$tmp/$asset")
     [ "$got" = "$want" ] && pass "$asset: sha256 of the release asset equals the pin ($want)" || fail "$asset: asset sha256 $got != pin $want"
+    # 5. the asset's content equals the tag's source for that skill
+    mkdir -p "$tmp/a-$skill" "$tmp/s-$skill"
+    tar -xzf "$tmp/$asset" -C "$tmp/a-$skill" 2>/dev/null || fail "$asset: cannot extract"
+    git archive "$tag" "skills/$skill" | tar -x -C "$tmp/s-$skill"
+    if diff -r "$tmp/a-$skill/$skill" "$tmp/s-$skill/skills/$skill" >/dev/null 2>&1; then
+      xa=$(cd "$tmp/a-$skill/$skill" && find . -type f -perm -u+x | LC_ALL=C sort)
+      xs=$(cd "$tmp/s-$skill/skills/$skill" && find . -type f -perm -u+x | LC_ALL=C sort)
+      [ "$xa" = "$xs" ] && pass "$asset: content (files, bytes, executable bits) equals skills/$skill at $tag" \
+                        || fail "$asset: executable bits differ from skills/$skill at $tag"
+    else
+      fail "$asset: content differs from skills/$skill at $tag"
+    fi
   else
     fail "$asset: not found among the release assets"
   fi

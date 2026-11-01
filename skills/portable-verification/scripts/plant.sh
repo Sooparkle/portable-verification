@@ -63,6 +63,25 @@ if [ -n "$pointer" ]; then
   pf="$target/$pointer"
   { [ -e "$pf" ] && [ -w "$pf" ]; } || { [ ! -e "$pf" ] && [ -w "$(dirname "$pf")" ]; } || die "pointer file is not writable: $pointer"
 fi
+# Pre-flight: every path we will write must be absent or of the right kind and writable.
+need_dir() { # PATH: absent, or a writable directory
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    [ -d "$1" ] && [ ! -L "$1" ] || die "exists but is not a directory: ${1#$target/}"
+    [ -w "$1" ] || die "directory is not writable: ${1#$target/}"
+  fi
+}
+need_file() { # PATH: absent, or a writable regular file
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    [ -f "$1" ] && [ ! -L "$1" ] || die "exists but is not a regular file: ${1#$target/}"
+    [ -w "$1" ] || die "file is not writable: ${1#$target/}"
+  fi
+}
+for d in $skill_dirs; do need_dir "$target/${d%/*}"; need_dir "$target/$d"; need_dir "$target/$d/$NAME"; done
+need_dir "$target/.verification"; need_dir "$target/.verification/evidence"
+for f in verify.sh checks.txt feature-map.md .plant-manifest; do need_file "$target/.verification/$f"; done
+need_file "$target/.gitignore"
+[ -n "$pointer" ] && need_file "$target/$pointer"
+if [ "$ci" = github ]; then need_dir "$target/.github"; need_dir "$target/.github/workflows"; need_file "$target/.github/workflows/verification.yml"; fi
 if [ "$check" = 1 ]; then echo "plant: check ok ($NAME, target $target)"; exit 0; fi
 
 # copy_tree SRC DEST: create, keep if identical, replace only with --force

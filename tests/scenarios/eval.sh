@@ -15,15 +15,18 @@ else
   echo "# note: jsonschema NOT installed; the schema cross-check test is skipped here"
 fi
 
-out=$(cd "$ROOT/tests/py" && "$PYTHON_BIN" -I -m unittest discover -s . -t . -v 2>&1)
-n=0
+out=$(cd "$ROOT/tests/py" && "$PYTHON_BIN" -I -m unittest discover -s . -t . -v 2>&1); ucode=$?
+n=0; skipped=0
 while IFS= read -r line; do
   case "$line" in
     *" ... ok") ok "py: ${line%% (*}"; n=$((n + 1)) ;;
     *" ... FAIL"|*" ... ERROR") not_ok "py: ${line%% (*}"; n=$((n + 1)) ;;
-    *" ... skipped "*) echo "# skipped: ${line%% (*}" ;;
+    *" ... skipped "*) echo "# skipped: ${line%% (*}"; skipped=$((skipped + 1)) ;;
   esac
 done < <(printf '%s\n' "$out")
 if [ "$n" -eq 0 ]; then not_ok "python tests were discovered" "$(printf '%s\n' "$out" | tail -5)"; fi
+ran=$(printf '%s\n' "$out" | sed -n 's/^Ran \([0-9][0-9]*\) tests\{0,1\} in .*/\1/p' | tail -n 1)
+assert_eq "unittest process exit code" 0 "$ucode"
+assert_eq "every test that ran was counted (ok/not ok/skipped)" "${ran:-missing}" "$((n + skipped))"
 printf '%s\n' "$out" | grep -E '^(FAIL|ERROR):|^Traceback|AssertionError' | head -20 | sed 's/^/# /'
 finish_scenario

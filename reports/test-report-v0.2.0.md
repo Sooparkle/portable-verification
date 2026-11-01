@@ -227,3 +227,50 @@ A절에서 받아들인 보고서 정정:
 | 2 | B2, B3, B5 | 두 manifest 모두 검사, 모든 I/O·형식 오류를 BLOCKED로, 증거 불변조건을 "모든 시도"로 바꾸거나 계약 문구를 정확히 |
 | 3 | B4, B7, B8 | 사전 점검에 경로 종류 검사, 검증기 수정(`items:false`, 정수값 실수, `NaN` 거부), `eval.sh`에서 종료 코드 확인 |
 | 4 | B6, B9, 테스트 보강 | 기대 CI 작업 목록·원격 태그 확인, trial별 해시 기록, A8 크기 단독 테스트·A3 `unknown` 테스트·불변조건 개별 테스트, 변이 실행기와 시뮬레이션 스크립트를 저장소에 포함 |
+
+
+## 14. 리뷰 반영 후 수정과 재검증
+
+### 14.1 수정 (Codex 지적 대응)
+
+| # | 지적 | 수정 | 고정한 테스트 |
+|---|---|---|---|
+| B1 | trusted 실행 중 ref 채점기 변조로 trusted PASS | 채점기는 시작 시 읽은 바이트로 매번 새 임시 디렉터리에서 실행. 채점에 쓰는 자산(trusted: ref 사본, local: 작업 트리)을 매 채점 전과 종료 시 재해시, 바뀌면 BLOCKED. 시행 기록·증거는 메모리에 모았다가 마지막에 쓰고 `result.json`에 해시 기록. 어댑터에 전용 `TMPDIR`. **격리가 아니라 탐지**임을 계약 1절·README에 명시(공식 판정에는 다른 OS 사용자/컨테이너 필요) | `TestRunIntegrity`: ref 채점기 변조, ref 스냅샷 심기, 작업 트리 채점기 변조 → 3(공격이 실제 일어났는지도 단언), 로드 후 파일 변경이 채점에 영향 없음, 실행 디렉터리 삭제 → 판정·기록 온전, 실행 디렉터리 쓰기 불가 → 3, 전용 TMPDIR |
+| B2 | compare가 두 번째 manifest의 결정 시각을 무시 | 두 manifest 모두 검사 + `decision_fixed_at` 동등 비교 | `test_second_manifest_*`, `test_differing_decision_times_*` |
+| B3 | traceback·FAIL로 끝나는 오류 | system manifest 하위 필드 타입 검사, gate·validate·compare 모두 예외는 BLOCKED, 기록 실패는 판정과 무관하게 BLOCKED | `test_null_env_*`(거부 사유까지 단언), `test_unexpected_error_*`, `test_a17_*` |
+| B4 | 경로 종류 충돌로 반쪽 설치 | 두 `plant.sh`의 `--check`가 쓸 모든 경로의 종류·쓰기 가능 여부 검사 | install 시나리오 4종 충돌(둘 다 미설치 확인), plant·plant-eval 시나리오 |
+| B5 | 증거 불변조건이 실제와 다름 | 어떤 시도에서든 잘못된 증거가 나왔으면 `false`(재시도로 회복해도). 계약 문구를 실제 정의로 수정 | `test_trusted_pass_is_refused_after_an_invalid_evidence_attempt` (trusted 3 / local 0) |
+| B6 | 릴리스 검사 고리 누락 | 원격 태그 = 로컬 태그 커밋, 기대 CI 작업 전체 존재(목록은 ci.yml과 테스트로 동기화), 자산 내용 = 태그의 `skills/<skill>/`(파일·바이트·실행 비트)를 기본 검사로 | consistency 시나리오, 실제 v0.1.0으로 시험 (아래) |
+| B7 | 검증기 의미 | 엄격한 JSON(NaN·Infinity 거부), `1.0`은 정수, 비유한수 거부, `items:false` 지원 | `test_items_false_*`, `test_nan_in_evidence_is_invalid`, 교차 검증에 정수값 실수 변이 추가 |
+| B8 | unittest 종료 코드 미확인 | `eval.sh`가 종료 코드와 "Ran N tests" 대비 집계 수를 단언 | 시나리오 자체 |
+| B9 | trial 메타데이터 누락 | `trials.jsonl`에 `adapter_sha256`, 기준별 `grader_sha256` | `test_pass` 확장 |
+| A절 | 테스트 약점 | 크기 초과 테스트를 스키마상 유효한 큰 증거로 분리, `unknown` 관측기 테스트, 안전 게이트만 돌릴 때는 critical 채점기만 자기 테스트 대상, 아무것도 선택되지 않아도 severity 경고 | `test_a8_oversize_evidence`, `test_a3_observer_unknown`, `test_safety_only_run_*`, `test_severity_warning_also_*` |
+
+이번 라운드에서 제가 만든 실수 2건도 테스트가 드러냈습니다.
+- 공격용 가짜 어댑터의 `glob("**")`가 숨김 폴더 `.eval`로 내려가지 않아, 처음 작성한 A15 테스트에서는 **공격 자체가 일어나지 않았습니다**(결과가 FAIL로 나와 발견). 경로를 고치고, 어댑터가 변조한 파일 수를 기록해 테스트가 "공격이 실제로 일어났음"을 단언하게 했습니다.
+- `check-release.sh`의 기대 작업 목록 구분자를 쉼표로 했는데 작업 이름(`test (ubuntu-latest, 3.9)`)에 쉼표가 있어 목록이 잘못 쪼개졌습니다. v0.1.0으로 시험하다 발견해 `;`로 바꿨습니다.
+
+### 14.2 재검증 결과 (macOS, bash 3.2.57)
+
+로그: `reports/logs/` (테스트 매트릭스, 변이, e2e, 시뮬레이션, shellcheck). 도구: `reports/tools/mutations.py`, `reports/tools/simulate_gate.py`, `reports/e2e-walkthrough.sh`.
+
+| 항목 | 결과 |
+|---|---|
+| 전체 테스트, 환경 3종 + 반복 2회 (수정 직후) | 5회 모두 실패 0건. A·B·A반복2·A반복3 각 376개, C 375개(교차 검증 1개 건너뜀) |
+| 살아남은 변이용 테스트 3개 추가 후 환경 A | **378개 통과, 실패 0건** (코드는 그대로, 테스트만 추가) |
+| 변이 검사 29개 (최종 코드) | **28개 검출, 1개 생존** (아래) |
+| e2e (`reports/e2e-walkthrough.sh`) | 8/8 |
+| 시뮬레이션 200만 회 | 문서 확률과 일치, \|z\| ≤ 1.01 |
+| shellcheck 0.11.0 | 경고 0건 |
+| `check-release.sh v0.1.0` (당시 작업 이름 지정) | OK. v0.2.0 작업 목록으로 검사하면 없는 4개 작업을 정확히 지목하며 실패 |
+
+변이 검사 경과:
+- 첫 실행(29개)에서 3개가 살아남았습니다. "compare가 A의 결정 시각만 읽음"은 `decision_fixed_at` 동등 비교가 있는 한 어떤 입력으로도 구별되지 않는 **동치 변이**라 목록에서 뺐습니다. "`decision_fixed_at` 동등 비교 제거"와 "system manifest 타입 검사 제거"는 테스트 구멍이어서 테스트를 보강했고, 이제 검출됩니다.
+- 대신 추가한 "compare의 일반 오류 처리 제거" 변이는 **살아남았습니다.** 이를 위해 넣은 테스트(`test_unexpected_error_is_blocked_not_a_traceback`)의 입력이 스키마 검증에서 정상적인 BLOCKED로 걸려, 일반 오류 처리 경로까지 가지 않기 때문입니다. 테스트가 검증하는 동작(BLOCKED, traceback 없음)은 맞지만, 그 경로를 따로 검증하지는 못합니다. 사용자 결정에 따라 이번에는 고치지 않았습니다.
+- 재리뷰(Codex 2차)는 사용자 결정으로 하지 않았습니다. 따라서 14.1의 수정이 Codex 지적을 해소했다는 판단은 **제 테스트에 근거한 것이며 외부 검증을 받지 않았습니다.**
+
+### 14.3 남은 한계 (해결하지 않음)
+
+- **같은 사용자 권한의 한계.** 프로세스 그룹을 벗어나 살아남은 프로세스(`setsid` 등)는 재해시와 채점 사이를 노릴 수 있습니다. 공식 판정에는 평가 대상을 다른 OS 사용자나 컨테이너에서 실행해야 하며, 도구는 이를 확인하지 못합니다. 이번 결정(범위 축소)에 따라 trusted 모드는 **실험적이며, 위 전제 없이 공식 판정이라 부르지 않습니다.**
+- GitHub Actions(이 저장소 CI, 심어지는 워크플로), Linux, 실제 LLM 에이전트, 저장소 보호 설정은 여전히 실행·시험하지 않았습니다.
+- 릴리스 핀은 아직 `UNSET`입니다(릴리스 단계에서 채움). 현재 커밋은 그대로 배포 가능한 설치기가 아닙니다.

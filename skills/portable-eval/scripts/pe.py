@@ -81,10 +81,21 @@ def parse_when(text):
         raise Blocked("cannot parse time value: %r" % (text,))
 
 
+def _reject_constant(name):
+    raise ValueError("non-standard JSON number %s" % name)
+
+
+def loads_strict(data):
+    """json.loads that refuses NaN, Infinity and -Infinity (not valid JSON)."""
+    if isinstance(data, bytes):
+        data = data.decode("utf-8")
+    return json.loads(data, parse_constant=_reject_constant)
+
+
 def read_json(path, what):
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return loads_strict(f.read())
     except FileNotFoundError:
         raise Blocked("%s not found: %s" % (what, path))
     except (ValueError, UnicodeDecodeError) as e:
@@ -151,9 +162,15 @@ def _is_type(value, name):
     if name == "null":
         return value is None
     if name == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
+        if isinstance(value, bool):
+            return False
+        if isinstance(value, int):
+            return True
+        return isinstance(value, float) and math.isfinite(value) and value.is_integer()
     if name == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if isinstance(value, bool):
+            return False
+        return isinstance(value, int) or (isinstance(value, float) and math.isfinite(value))
     raise Blocked("unknown JSON Schema type %r" % (name,))
 
 
@@ -204,9 +221,12 @@ def validate(instance, schema, root=None, path="$"):
     if isinstance(instance, list):
         if "minItems" in schema and len(instance) < schema["minItems"]:
             errors.append("%s: fewer than %d items" % (path, schema["minItems"]))
-        if isinstance(schema.get("items"), dict):
+        items = schema.get("items", True)
+        if items is False and instance:
+            errors.append("%s: no items allowed" % path)
+        elif isinstance(items, dict):
             for i, item in enumerate(instance):
-                errors += validate(item, schema["items"], root, "%s[%d]" % (path, i))
+                errors += validate(item, items, root, "%s[%d]" % (path, i))
     if isinstance(instance, dict):
         for name in schema.get("required", []):
             if name not in instance:
@@ -420,6 +440,8 @@ class Assets:
         self.critical = set()
         self.case_set_sha = None
         self.decision_sha = None
+        self.graders = {}        # grader_id -> (file name, bytes, sha256, interpreter); graders run from these bytes
+        self.digest = None       # content hash of the eval dir when it was loaded
 
 
 def load_assets(eval_dir):
@@ -476,7 +498,22 @@ def load_assets(eval_dir):
                 a.case_files[case["id"]] = p
     lines = "".join("%s\0%s\n" % (cid, sha256_text(canonical(a.cases[cid]))) for cid in sorted(a.cases))
     a.case_set_sha = sha256_text(lines)
+    for gid, g in spec["graders"].items():
+        gp = grader_path(eval_dir, gid, g)
+        if not os.path.isfile(gp):
+            raise Blocked("grader file missing: %s" % gid)
+        with open(gp, "rb") as f:
+            blob = f.read()
+        a.graders[gid] = (os.path.basename(gp), blob, sha256_bytes(blob), g.get("interpreter", "python"))
+    a.digest, _ = assets_digest(eval_dir)
     return a
+
+
+def recheck_assets(assets, when):
+    """Fail closed if any evaluation asset changed since it was loaded (e.g. rewritten by the adapter)."""
+    now, entries = assets_digest(assets.dir)
+    if now != assets.digest:
+        raise Blocked("evaluation assets changed during the run (%s); refusing to judge" % when)
 
 
 def lint_assets(assets):
@@ -524,7 +561,7 @@ def run_proc(argv, cwd, env, timeout, stdout_path=None):
 
 
 def minimal_env(extra=()):
-    keep = ["PATH", "LANG", "LC_ALL", "TZ", "TMPDIR"] + list(extra)
+    keep = ["PATH", "LANG", "LC_ALL", "TZ"] + list(extra)
     return {k: os.environ[k] for k in keep if k in os.environ}
 
 
@@ -540,43 +577,48 @@ def grader_path(eval_dir, grader_id, g):
 
 
 def run_grader(assets, grader_id, case, evidence_path, tmp):
-    """Run one grader. Returns ("pass"|"fail", grader_sha256). Anything else raises Blocked."""
-    g = assets.spec["graders"].get(grader_id)
-    if g is None:
+    """Run one grader from the bytes read when the assets were loaded, written to a fresh private
+    directory, so a change to the grader file after loading cannot affect the verdict.
+    Returns ("pass"|"fail", grader_sha256). Anything else raises Blocked."""
+    if grader_id not in assets.graders:
         raise Blocked("unknown grader %s" % grader_id)
-    path = grader_path(assets.dir, grader_id, g)
-    if not os.path.isfile(path):
-        raise Blocked("grader file missing: %s" % grader_id)
-    interp = g.get("interpreter", "python")
-    if interp == "python":
-        argv = [sys.executable, "-I", path]
-    else:
-        if not os.access(path, os.X_OK):
-            raise Blocked("grader %s is not executable" % grader_id)
-        argv = [path]
-    case_file = os.path.join(tmp, "case.json")
-    with open(case_file, "w", encoding="utf-8") as f:
-        json.dump(case, f)
-    ref_dir = os.path.join(assets.dir, "snapshots", assets.spec["reference"]["snapshot_id"])
-    argv += [case_file, evidence_path, ref_dir]
-    code, timed_out, _, err = run_proc(argv, tmp, grader_env(), GRADER_TIMEOUT)
+    name, blob, gsha, interp = assets.graders[grader_id]
+    gdir = tempfile.mkdtemp(prefix="pe-grader-")
+    try:
+        path = os.path.join(gdir, name)
+        with open(path, "wb") as f:
+            f.write(blob)
+        os.chmod(path, 0o700)
+        argv = [sys.executable, "-I", path] if interp == "python" else [path]
+        case_file = os.path.join(tmp, "case.json")
+        with open(case_file, "w", encoding="utf-8") as f:
+            json.dump(case, f)
+        ref_dir = os.path.join(assets.dir, "snapshots", assets.spec["reference"]["snapshot_id"])
+        argv += [case_file, evidence_path, ref_dir]
+        code, timed_out, _, err = run_proc(argv, tmp, grader_env(), GRADER_TIMEOUT)
+    except OSError as e:
+        raise Blocked("cannot prepare grader %s: %s" % (grader_id, e))
+    finally:
+        shutil.rmtree(gdir, ignore_errors=True)
     if timed_out:
         raise Blocked("grader %s timed out" % grader_id)
     if code is None:
         raise Blocked("grader %s could not start: %s" % (grader_id, err))
     if code == 0:
-        return "pass", sha256_file(path)
+        return "pass", gsha
     if code == 1:
-        return "fail", sha256_file(path)
+        return "fail", gsha
     raise Blocked("grader %s returned exit code %s (grading error)" % (grader_id, code))
 
 
-def grade_criteria(assets, case, criteria_ids, evidence_path, tmp, hashes):
+def grade_criteria(assets, case, criteria_ids, evidence_path, tmp, hashes, per_criterion=None):
     results = {}
     for cid in criteria_ids:
         crit = assets.criteria[cid]
         verdict, gsha = run_grader(assets, crit["grader_id"], case, evidence_path, tmp)
         hashes[crit["grader_id"]] = gsha
+        if per_criterion is not None:
+            per_criterion[cid] = gsha
         results[cid] = verdict
     return results
 
@@ -608,7 +650,7 @@ def load_reference_evidence(assets, case, key, tmp):
     if sha256_bytes(data) != case[key + "_sha256"]:
         raise Blocked("%s evidence of %s does not match its pinned sha256" % (key, case["id"]))
     try:
-        ev = json.loads(data.decode("utf-8"))
+        ev = loads_strict(data)
     except (ValueError, UnicodeDecodeError):
         raise Blocked("%s evidence of %s is not valid JSON" % (key, case["id"]))
     errs = validate(ev, assets.schemas["evidence"])
@@ -622,23 +664,25 @@ def load_reference_evidence(assets, case, key, tmp):
     return ev, copy
 
 
-def selftest(assets, cases, hashes):
-    """Per case: known_bad must fail at least one criterion, known_good must pass all.
-    Per grader: every grader the cases use must fail at least one known_bad evidence; otherwise
-    nothing shows that it can tell bad from good (an always-pass grader could hide behind another criterion)."""
+def selftest(assets, cases, hashes, graded=None):
+    """Per case: known_bad must fail at least one of the criteria graded in this run, known_good must pass them.
+    Per grader: every grader used in this run must fail at least one known_bad evidence; otherwise
+    nothing shows that it can tell bad from good (an always-pass grader could hide behind another criterion).
+    graded: case id -> criteria graded in this run (default: all criteria of the case)."""
     used = set()
     discriminates = set()
     for case in cases:
-        for cid in case["criteria"]:
+        crit_ids = (graded or {}).get(case["id"], case["criteria"])
+        for cid in crit_ids:
             used.add(assets.criteria[cid]["grader_id"])
         for key, want in (("known_bad", "fail"), ("known_good", "pass")):
             if key + "_ref" not in case:
                 continue
             with tempfile.TemporaryDirectory(prefix="pe-selftest-") as tmp:
                 ev, copy = load_reference_evidence(assets, case, key, tmp)
-                if not policy_coverage_ok(assets, ev, case["criteria"]):
+                if not policy_coverage_ok(assets, ev, crit_ids):
                     raise Blocked("%s evidence of %s lacks active policy coverage" % (key, case["id"]))
-                res = grade_criteria(assets, case, case["criteria"], copy, tmp, hashes)
+                res = grade_criteria(assets, case, crit_ids, copy, tmp, hashes)
                 if want == "fail" and "fail" not in res.values():
                     raise Blocked("self-test failed: grader passed the known_bad evidence of %s" % case["id"])
                 if want == "fail":
@@ -714,20 +758,35 @@ class Run:
         self.out_dir = out_dir
         self.run_id = run_id
         self.grader_hashes = {}
-        self.trials_path = os.path.join(out_dir, "trials.jsonl")
-        self.ev_dir = os.path.join(out_dir, "evidence")
-        os.makedirs(self.ev_dir, exist_ok=True)
         self.adapter_sha = None
-        self.evidence_all_valid = True
+        self.any_invalid_evidence = False
+        # Records and evidence stay in memory until the end: the adapter runs with the same user rights
+        # and could delete or rewrite files under the run directory while the run is going on.
+        self.records = []
+        self.evidence = {}       # file name -> bytes
 
     def log_trial(self, rec):
+        self.records.append(dict(rec))
+
+    def write_artifacts(self):
+        """Write trials.jsonl and the evidence files, read them back, return {relative path: sha256}."""
+        written = {}
         try:
-            with open(self.trials_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(rec, sort_keys=True) + "\n")
-                f.flush()
-                os.fsync(f.fileno())
+            ev_dir = os.path.join(self.out_dir, "evidence")
+            os.makedirs(ev_dir, exist_ok=True)
+            body = "".join(json.dumps(r, sort_keys=True) + "\n" for r in self.records).encode("utf-8")
+            items = [("trials.jsonl", body)] + [("evidence/" + n, b) for n, b in sorted(self.evidence.items())]
+            for rel, data in items:
+                with open(os.path.join(self.out_dir, *rel.split("/")), "wb") as f:
+                    f.write(data)
+                written[rel] = sha256_bytes(data)
+            for rel, want in written.items():
+                with open(os.path.join(self.out_dir, *rel.split("/")), "rb") as f:
+                    if sha256_bytes(f.read()) != want:
+                        raise Blocked("artifact %s changed right after it was written" % rel)
         except OSError as e:
-            raise Blocked("cannot write trials.jsonl: %s" % e)
+            raise Blocked("cannot write run artifacts: %s" % e)
+        return written
 
 
 def mark(rec, reason, cls, detail=None):
@@ -752,10 +811,13 @@ def one_attempt(run, case, criteria_ids, label):
     timeout = spec.get("adapter", {}).get("timeout_s", ADAPTER_TIMEOUT_DEFAULT)
     allow = spec.get("adapter", {}).get("env_allow", [])
     rec = {"schema_version": 1, "run_id": run.run_id, "case_id": case["id"], "label": label,
-           "started_at": now_iso(), "criteria": {}, "evidence_sha256": None}
+           "started_at": now_iso(), "criteria": {}, "evidence_sha256": None,
+           "adapter_sha256": run.adapter_sha, "grader_sha256": {}}
     with tempfile.TemporaryDirectory(prefix="pe-trial-") as tmp:
         work = os.path.join(tmp, "work")
         os.makedirs(work)
+        private_tmp = os.path.join(tmp, "tmp")
+        os.makedirs(private_tmp)
         case_file = os.path.join(tmp, "adapter-case.json")
         with open(case_file, "w", encoding="utf-8") as f:
             json.dump({"id": case["id"], "input": case["input"]}, f)
@@ -763,6 +825,7 @@ def one_attempt(run, case, criteria_ids, label):
         env = minimal_env(allow)
         env["PE_CASE_FILE"] = case_file
         env["PE_WORKDIR"] = work
+        env["TMPDIR"] = private_tmp
         code, timed_out, size, err = run_proc(run.adapter_argv, work, env, timeout, out_path)
         if timed_out:
             mark(rec, "adapter_timeout", "system")
@@ -776,7 +839,7 @@ def one_attempt(run, case, criteria_ids, label):
             with open(out_path, "rb") as f:
                 data = f.read()
             try:
-                ev = json.loads(data.decode("utf-8"))
+                ev = loads_strict(data)
                 errs = validate(ev, assets.schemas["evidence"])
             except (ValueError, UnicodeDecodeError):
                 ev, errs = None, ["not valid JSON"]
@@ -784,9 +847,7 @@ def one_attempt(run, case, criteria_ids, label):
                 mark(rec, "evidence_invalid", "infra", "; ".join(errs[:3]))
             else:
                 rec["evidence_sha256"] = sha256_bytes(data)
-                ev_name = "%s-%s.json" % (case["id"], label)
-                with open(os.path.join(run.ev_dir, ev_name), "wb") as f:
-                    f.write(data)
+                run.evidence["%s-%s.json" % (case["id"], label)] = data
                 reason = ev["termination_reason"]
                 cls = classify(reason)
                 mark(rec, reason, cls)
@@ -794,7 +855,9 @@ def one_attempt(run, case, criteria_ids, label):
                     if not policy_coverage_ok(assets, ev, criteria_ids):
                         mark(rec, "policy_coverage_inactive", "infra")
                     else:
-                        rec["criteria"] = grade_criteria(assets, case, criteria_ids, out_path, tmp, run.grader_hashes)
+                        recheck_assets(assets, "before grading %s %s" % (case["id"], label))
+                        rec["criteria"] = grade_criteria(assets, case, criteria_ids, out_path, tmp, run.grader_hashes,
+                                                         rec["grader_sha256"])
     rec["ended_at"] = now_iso()
     return rec
 
@@ -806,11 +869,11 @@ def run_slot(run, case, criteria_ids, phase, index):
         rec = one_attempt(run, case, criteria_ids, "t%d-a%d" % (index, attempt))
         rec.update(slot=index, attempt=attempt, phase=phase)
         run.log_trial(rec)
+        if rec["reason"] == "evidence_invalid":
+            run.any_invalid_evidence = True
         final = rec
         if rec["class"] != "infra":
             break
-    if final["reason"] == "evidence_invalid":
-        run.evidence_all_valid = False
     if final["class"] == "infra":
         outcome = "unrunnable"
     elif final["class"] == "system":
@@ -848,6 +911,9 @@ def load_system_manifest(path):
     data = read_json(path, "system manifest")
     if not isinstance(data, dict):
         raise Blocked("system manifest must be a JSON object")
+    for k in ("system", "env", "budget"):
+        if k in data and not isinstance(data[k], dict):
+            raise Blocked("system manifest field %s must be an object" % k)
     return {k: data[k] for k in ("comparison_purpose", "system", "env", "budget") if k in data}
 
 
@@ -975,20 +1041,21 @@ def cmd_gate(args):
             selected[c["id"]] = c
         if not selected:
             return finish(run, "NOT RUN", "no case selected for gate %s" % args.gate, mode, mode_label, trusted_sha,
-                          assets_sha, invariants, review, {}, {}, {}, sysm, started, root)
-        selftest(assets, [selected[k] for k in sorted(selected)], run.grader_hashes)
-        invariants["selftest_passed"] = True
-
+                          assets_sha, invariants, review, {}, {}, {}, sysm, started, root, assets=assets)
         reg_ids = {c["id"] for c in reg_cases}
         saf_ids = {c["id"] for c in saf_cases}
+        graded = {}
+        for cid in sorted(selected):
+            case = selected[cid]
+            graded[cid] = list(case["criteria"]) if cid in reg_ids else [x for x in case["criteria"] if x in assets.critical]
+        selftest(assets, [selected[k] for k in sorted(selected)], run.grader_hashes, graded)
+        invariants["selftest_passed"] = True
+
         slots = {}
         trials_per_case = {}
         for cid in sorted(selected):
             case = selected[cid]
-            if cid in reg_ids:
-                crit = list(case["criteria"])
-            else:
-                crit = [x for x in case["criteria"] if x in assets.critical]
+            crit = graded[cid]
             lst = []
             slots[cid] = lst
             def runner(phase, index, case=case, crit=crit):
@@ -1002,20 +1069,22 @@ def cmd_gate(args):
         reg_dec = {cid: decide_regression(slots[cid]) for cid in sorted(reg_ids)}
         saf_dec = {cid: decide_safety(slots[cid], [x for x in selected[cid]["criteria"] if x in assets.critical])
                    for cid in sorted(saf_ids)}
+        recheck_assets(assets, "at the end of the run")
         invariants["gate_executed"] = True
-        invariants["evidence_schema_verified"] = run.evidence_all_valid
+        invariants["evidence_schema_verified"] = not run.any_invalid_evidence
         return finish(run, None, None, mode, mode_label, trusted_sha, assets_sha, invariants, review,
                       reg_dec, saf_dec, trials_per_case, sysm, started, root, selected=selected, saf_ids=saf_ids,
                       assets=assets)
-    except Blocked as e:
+    except Exception as e:     # fail closed: an unexpected error is BLOCKED, never a traceback with exit 1
+        detail = str(e) if isinstance(e, Blocked) else "internal error: %s: %s" % (type(e).__name__, e)
         if run_dir and os.path.isdir(run_dir):
             try:
-                write_json(os.path.join(run_dir, "result.json"), {"status": "BLOCKED", "detail": str(e), "mode": mode,
+                write_json(os.path.join(run_dir, "result.json"), {"status": "BLOCKED", "detail": detail, "mode": mode,
                                                                     "invariants": invariants, "tool_version": TOOL_VERSION})
             except Blocked:
                 pass
         print("MODE: %s" % mode_label)
-        return final_line("BLOCKED", str(e), run_dir)
+        return final_line("BLOCKED", detail, run_dir)
     finally:
         if tmp_assets:
             shutil.rmtree(tmp_assets, ignore_errors=True)
@@ -1061,23 +1130,28 @@ def finish(run, forced_status, forced_detail, mode, mode_label, trusted_sha, ass
               "regression": reg_dec, "safety": saf_dec, "trials_per_case": trials_per_case,
               "started_at": started, "ended_at": now_iso()}
     try:
+        os.makedirs(run.out_dir, exist_ok=True)
+        artifacts = run.write_artifacts()
         if assets is not None:
             manifest = build_manifest(run, sysm, mode, trusted_sha, assets_sha, trials_per_case, started, root)
             merrs = validate(manifest, assets.schemas["manifest"])
             if merrs:
                 raise Blocked("manifest invalid: " + "; ".join(merrs[:4]))
             write_json(os.path.join(run.out_dir, "manifest.json"), manifest)
+            with open(os.path.join(run.out_dir, "manifest.json"), "rb") as f:
+                artifacts["manifest.json"] = sha256_bytes(f.read())
         invariants["artifacts_preserved"] = True
         result["invariants"] = invariants
+        result["artifacts_sha256"] = artifacts
         write_json(os.path.join(run.out_dir, "result.json"), result)
-    except Blocked as e:
+    except (Blocked, OSError) as e:
+        # BLOCKED > FAIL: without complete artifacts no verdict is reported, whatever it would have been
         invariants["artifacts_preserved"] = False
-        if status in ("PASS", "NEEDS_REVIEW") or forced_status == "NOT RUN":
-            status, detail = "BLOCKED", str(e)
+        status, detail = "BLOCKED", "artifacts not preserved: %s" % e
         try:
             result.update(status=status, detail=detail, invariants=invariants)
             write_json(os.path.join(run.out_dir, "result.json"), result)
-        except Blocked:
+        except (Blocked, OSError):
             pass
     print("MODE: %s" % mode_label)
     if assets is not None:
@@ -1113,8 +1187,8 @@ def cmd_validate(args):
         print("validate: spec ok, %d criteria, %d cases, %d graders" % (len(assets.criteria), len(assets.cases), len(hashes)))
         print("STATUS: PASS (valid)")
         return 0
-    except Blocked as e:
-        print("STATUS: BLOCKED (%s)" % e)
+    except Exception as e:
+        print("STATUS: BLOCKED (%s)" % (e if isinstance(e, Blocked) else "internal error: %s: %s" % (type(e).__name__, e)))
         return EXIT["BLOCKED"]
 
 
@@ -1150,18 +1224,19 @@ def cmd_compare(args):
         if a["mode"] != b["mode"]:
             raise Blocked("manifests were produced in different modes (%s vs %s)" % (a["mode"], b["mode"]))
         fa, fb = flatten(a["evaluation"]), flatten(b["evaluation"])
-        for k in ("spec_id", "spec_version", "case_set_sha256", "snapshot_id", "decision_sha256", "assets_sha256"):
+        for k in ("spec_id", "spec_version", "case_set_sha256", "snapshot_id", "decision_sha256", "decision_fixed_at",
+                  "assets_sha256"):
             if fa[k] != fb[k]:
                 raise Blocked("evaluation field differs: %s" % k)
         ga = {k: v for k, v in fa.items() if k.startswith("grader_sha256.")}
         gb = {k: v for k, v in fb.items() if k.startswith("grader_sha256.")}
         if ga != gb:
             raise Blocked("evaluation field differs: grader_sha256")
-        fixed = parse_when(a["evaluation"]["decision_fixed_at"])
         for m in (a, b):
-            if fixed > parse_when(m["run_started_at"]):
-                raise Blocked("decision was fixed (%s) after a run started (%s); decision changed after the fact"
-                              % (a["evaluation"]["decision_fixed_at"], m["run_started_at"]))
+            for other in (a, b):
+                if parse_when(m["evaluation"]["decision_fixed_at"]) > parse_when(other["run_started_at"]):
+                    raise Blocked("decision was fixed (%s) after a run started (%s); decision changed after the fact"
+                                  % (m["evaluation"]["decision_fixed_at"], other["run_started_at"]))
         diffs = {}
         for section in ("system", "env", "budget"):
             fa_s, fb_s = flatten(a[section], section + "."), flatten(b[section], section + ".")
@@ -1179,8 +1254,8 @@ def cmd_compare(args):
             print("differs: %s: %r -> %r" % (k, diffs[k][0], diffs[k][1]))
         print("STATUS: COMPARABLE (purpose=%s, mode=%s)" % (args.purpose, a["mode"]))
         return 0
-    except Blocked as e:
-        print("STATUS: BLOCKED (%s)" % e)
+    except Exception as e:
+        print("STATUS: BLOCKED (%s)" % (e if isinstance(e, Blocked) else "internal error: %s: %s" % (type(e).__name__, e)))
         return EXIT["BLOCKED"]
 
 

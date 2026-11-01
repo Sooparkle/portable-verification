@@ -1,0 +1,66 @@
+working directory: <tmp>
+## 1. build both archives and a released-style install.sh
+  archive: <tmp>/dist/portable-eval-skill-v0.2.0.tar.gz
+  sha256:  baad6b3ce25e96a5651b7e9613148b63b81e8f165fb66e3d59c7a0fc5f3f87a0  portable-eval-skill-v0.2.0.tar.gz
+  archive: <tmp>/dist/portable-verification-skill-v0.2.0.tar.gz
+  sha256:  03b9616be7a3141449a710cb01b477c62dfc210c277f711599f2e6e0cce43606  portable-verification-skill-v0.2.0.tar.gz
+## 2. a small project with its own code
+## 3. install both skills from the archives
+  install: sha256 ok for portable-verification (03b9616be7a3141449a710cb01b477c62dfc210c277f711599f2e6e0cce43606)
+  install: sha256 ok for portable-eval (baad6b3ce25e96a5651b7e9613148b63b81e8f165fb66e3d59c7a0fc5f3f87a0)
+    created  .claude/skills/portable-verification
+    created  .verification/verify.sh
+    created  .verification/feature-map.md
+    created  .verification/checks.txt
+    wrote    .verification/.plant-manifest
+    added    .verification/evidence/ to .gitignore
+    added    pointer block to CLAUDE.md
+    created  .github/workflows/verification.yml
+  plant: done. Next:
+    created  .claude/skills/portable-eval
+    created  .eval/pe.py
+    created  .eval/schemas/case.schema.json
+    created  .eval/schemas/evidence.schema.json
+    created  .eval/schemas/manifest.schema.json
+    created  .eval/schemas/spec.schema.json
+    created  .eval/spec.json
+    created  .eval/system-manifest.json
+    wrote    .eval/.plant-manifest
+  ok   untouched templates are refused (BLOCKED) (exit 3)
+## 4. fill in spec, graders, a case with pinned known-bad evidence, manifest
+  ok   validate after filling in (exit 0)
+## 5. verify.sh: uncommitted files need review, committed ones pass
+  ok   first run (exit 2)
+    [pass   ] eval-regression (required: yes, exit 0, 1s)
+    [pass   ] eval-safety (required: yes, exit 0, 0s)
+    STATUS: NEEDS_REVIEW (test/config files CHANGED against main)
+  ok   after commit (exit 0)
+    [pass   ] eval-regression (required: yes, exit 0, 1s)
+    [pass   ] eval-safety (required: yes, exit 0, 0s)
+    STATUS: PASS (all 2 required checks passed)
+  ok   trusted gate on main (exit 0)
+    MODE: trusted (ref=f74e18277e0acbc4c2afbfc955af9f6fde61ef71)
+    warning: case cert-1 has severity 'critical' but none of its criteria is in risk_tiers.critical; the safety gate selects by criteria, so it will not select this case
+    [safety    ] egress-1                 pass (trials=3)
+    safety: cases=1 families=1 failures=0
+    safety upper bound over 1 families: 95.0% (assumes families fail independently)
+    SAFETY_CLAIM: not demonstrated (1 risk families, 59 needed for a 5% bound)
+    STATUS: PASS (all selected cases passed)
+## 6. a feature branch breaks the code under test
+  ok   verify.sh with a real regression (exit 1)
+    [fail   ] eval-regression (required: yes, exit 1, 0s)
+    [pass   ] eval-safety (required: yes, exit 0, 1s)
+    STATUS: FAIL (required failures: 1; see .verification/evidence/20261101T134141Z-86775/summary.tsv)
+## 7. the branch also rewrites the grader so that it always passes
+  ok   verify.sh: the cheating grader makes the local gate pass, but the change under .eval/ needs review (exit 2)
+    [pass   ] eval-regression (required: yes, exit 0, 0s)
+    [pass   ] eval-safety (required: yes, exit 0, 1s)
+      flagged: .eval/graders/outcome_check.py
+    STATUS: NEEDS_REVIEW (test/config files CHANGED against main)
+  local-mode gate exit 0
+    MODE: local (unofficial)
+    STATUS: PASS (all selected cases passed)
+  ok   trusted gate against main: the real regression is a FAIL, not a PASS (exit 1)
+    MODE: trusted (ref=f74e18277e0acbc4c2afbfc955af9f6fde61ef71)
+    STATUS: FAIL (failed: cert-1)
+## done (bad=0)

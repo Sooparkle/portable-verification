@@ -5,6 +5,8 @@ import importlib.util
 import json
 import os
 import random
+import hashlib
+import stat
 import shutil
 import subprocess
 import sys
@@ -132,11 +134,23 @@ class TestSchemaValidator(unittest.TestCase):
             with self.assertRaises(pe.Blocked, msg=str(bad)):
                 pe.check_schema_keywords(bad)
 
+    def test_items_false_integer_floats_and_non_finite_numbers(self):
+        v = pe.validate
+        self.assertNotEqual(v([1], {"items": False}), [])
+        self.assertEqual(v([], {"items": False}), [])
+        self.assertEqual(v(1.0, {"type": "integer"}), [])            # JSON Schema: 1.0 is an integer
+        self.assertNotEqual(v(1.5, {"type": "integer"}), [])
+        self.assertNotEqual(v(float("nan"), {"type": "number", "minimum": 0}), [])
+        self.assertNotEqual(v(float("inf"), {"type": "number"}), [])
+        with self.assertRaises(ValueError):
+            pe.loads_strict('{"cost": NaN}')
+        with self.assertRaises(ValueError):
+            pe.loads_strict('{"cost": Infinity}')
+
     def test_semantics(self):
         v = pe.validate
         self.assertEqual(v(1, {"type": "integer"}), [])
         self.assertNotEqual(v(True, {"type": "integer"}), [])
-        self.assertNotEqual(v(1.5, {"type": "integer"}), [])
         self.assertNotEqual(v(None, {"type": "string"}), [])
         self.assertEqual(v(None, {"type": ["string", "null"]}), [])
         self.assertNotEqual(v({"a": 1}, {"type": "object", "additionalProperties": False}), [])
@@ -162,6 +176,11 @@ class TestSchemaValidator(unittest.TestCase):
                 for wrong in (None, 12345, "zz", [], {}, True):
                     m = copy.deepcopy(doc); m[key] = wrong; mutants.append(("set %s=%r" % (key, wrong), m))
             extra = copy.deepcopy(doc); extra["zzz"] = 1; mutants.append(("extra", extra))
+            if name == "manifest":
+                m = copy.deepcopy(doc); m["budget"]["max_calls"] = 10.0; mutants.append(("integer-valued float", m))
+                m = copy.deepcopy(doc); m["budget"]["max_calls"] = 10.5; mutants.append(("non-integer float", m))
+            if name == "spec":
+                m = copy.deepcopy(doc); m["decision"]["safety_trials"] = 3.0; mutants.append(("integer-valued float", m))
             for key in ("type", "split", "kind", "termination_reason", "mode"):
                 if key in doc:
                     m = copy.deepcopy(doc); m[key] = "nope"; mutants.append(("enum " + key, m))
@@ -207,6 +226,13 @@ class TestGateLocal(Base):
         self.assertEqual(len(self.p.trials(rd)), 3)
         self.assertTrue(os.path.exists(os.path.join(rd, "manifest.json")))
         self.assertEqual(self.p.result(rd)["status"], "PASS")
+        rec = self.p.trials(rd)[0]
+        self.assertRegex(rec["adapter_sha256"], "^[0-9a-f]{64}$")
+        self.assertRegex(rec["grader_sha256"]["SC1"], "^[0-9a-f]{64}$")
+        arts = self.p.result(rd)["artifacts_sha256"]
+        for rel, want in arts.items():
+            with open(os.path.join(rd, *rel.split("/")), "rb") as fh:
+                self.assertEqual(hashlib.sha256(fh.read()).hexdigest(), want, rel)
 
     def test_always_failing_case_is_fail(self):
         self.p.add_case("R1", "F")
@@ -337,6 +363,18 @@ class TestContracts(Base):
         # the evidence schema already requires policy_coverage on a completed run
         self.assertEqual({t["reason"] for t in self.p.trials(rd)}, {"evidence_invalid"})
 
+    def test_a3_observer_unknown(self):
+        self.p.add_case("S1", "U", type="safety", criteria=("PC1",))
+        code, out, rd = self.p.gate("safety")
+        self.assertEqual(code, 3, out)
+        self.assertEqual({t["reason"] for t in self.p.trials(rd)}, {"policy_coverage_inactive"})
+
+    def test_nan_in_evidence_is_invalid(self):
+        self.p.add_case("R1", "Z")
+        code, out, rd = self.p.gate("regression")
+        self.assertEqual(code, 3, out)
+        self.assertEqual({t["reason"] for t in self.p.trials(rd)}, {"evidence_invalid"})
+
     def test_a3_observer_inactive(self):
         self.p.add_case("S1", "A", type="safety", criteria=("PC1",))
         code, out, rd = self.p.gate("safety")
@@ -385,6 +423,30 @@ class TestContracts(Base):
         self.p.add_case("R1", "P")
         code, out, _ = self.p.gate("regression")
         self.assertEqual(code, 0, out)
+
+    def test_safety_only_run_self_tests_only_the_critical_graders(self):
+        bad = good_evidence(marker="known_bad")            # ok=True: fails PC1 only
+        bad["policy_events"] = [{"type": "egress", "target": "evil.example", "allowed": False}]
+        self.p.add_case("RC1", "P", criteria=("SC1", "PC1"), bad_evidence=bad)
+        code, out, _ = self.p.gate("safety")               # grades PC1 only -> g_ok is not in use
+        self.assertEqual(code, 0, out)
+        code, out, _ = self.p.gate("regression")           # grades SC1 too -> g_ok uncovered
+        self.assertEqual(code, 3, out)
+
+    def test_severity_warning_also_when_nothing_is_selected(self):
+        self.p.add_case("R1", "P", severity="critical")
+        code, out, _ = self.p.gate("safety")
+        self.assertEqual(code, 4, out)
+        self.assertIn("warning: case R1 has severity 'critical'", out)
+
+    def test_null_env_in_system_manifest_is_blocked_not_a_traceback(self):
+        self.p.add_case("R1", "P")
+        sysm = json.loads(json.dumps(fixture.SYSTEM_MANIFEST)); sysm["env"] = None
+        self.p.save_sysm(sysm)
+        code, out, _ = self.p.gate("regression")
+        self.assertEqual(code, 3, out)
+        self.assertNotIn("Traceback", out)
+        self.assertIn("system manifest field env must be an object", out)    # rejected on purpose, not by the catch-all
 
     def test_selftest_known_good_must_pass(self):
         self.p.add_case("R1", "P", good=True)
@@ -670,6 +732,31 @@ class TestCompare(Base):
         self.assertEqual(code, 3, out)
         self.assertIn("after", out)
 
+    def test_second_manifest_decision_time_is_checked_too(self):
+        a = self.make("a")
+        data = fixture.read_json(a); data["evaluation"]["decision_fixed_at"] = "2099-01-01"
+        b = os.path.join(self.tmp, "late-b.json"); write_json(b, data)
+        self.assertEqual(self.compare(a, b)[0], 3)
+        self.assertEqual(self.compare(b, a)[0], 3)
+
+    def test_differing_decision_times_are_refused_even_when_both_are_in_the_past(self):
+        a = self.make("a")
+        data = fixture.read_json(a); data["evaluation"]["decision_fixed_at"] = "2025-12-31"
+        b = os.path.join(self.tmp, "other-time.json"); write_json(b, data)
+        code, out = self.compare(a, b)
+        self.assertEqual(code, 3, out)
+        self.assertIn("decision_fixed_at", out)
+
+    def test_unexpected_error_is_blocked_not_a_traceback(self):
+        a = self.make("a")
+        data = fixture.read_json(a)
+        b = os.path.join(self.tmp, "weird.json")
+        with open(b, "w") as fh:
+            fh.write("[1, 2, 3]")                      # valid JSON, but not an object: m["comparison_purpose"] raises
+        code, out = self.compare(a, b)
+        self.assertEqual(code, 3, out)
+        self.assertNotIn("Traceback", out)
+
     def test_assets_differ(self):
         a = self.make("a")
         self.p.add_case("R2", "P")
@@ -770,6 +857,85 @@ class TestSimulation(unittest.TestCase):
                 safety_fail += 1
         self.assertGreater(flaky_pass, 0)                 # the two gates really interpret the same trials differently
         self.assertGreaterEqual(safety_fail, flaky_pass)
+
+
+class TestRunIntegrity(Base):
+    """Attacks on the run itself, by an adapter that has the same user rights as pe.py."""
+
+    def assertAttackHappened(self):
+        hits = [int(x) for x in fixture.read_text(os.path.join(self.tmp, "state-1", "tampered.txt")).split()]
+        self.assertTrue(hits and sum(hits) > 0, "the fake adapter did not manage to tamper with anything: %r" % hits)
+
+    def test_a15_adapter_rewrites_the_extracted_ref_grader(self):
+        self.p.add_case("R1", "R")
+        self.p.init_git()
+        code, out, rd = self.p.gate("regression", trusted_ref="main")
+        self.assertEqual(code, 3, out)
+        self.assertIn("changed during the run", out)
+        self.assertAttackHappened()
+
+    def test_a15_adapter_plants_a_snapshot_in_the_extracted_ref(self):
+        self.p.add_case("R1", "Q")
+        self.p.init_git()
+        code, out, _ = self.p.gate("regression", trusted_ref="main")
+        self.assertEqual(code, 3, out)
+        self.assertIn("changed during the run", out)
+        self.assertAttackHappened()
+
+    def test_a15_adapter_rewrites_the_working_tree_grader_local(self):
+        self.p.add_case("R1", "G")
+        code, out, _ = self.p.gate("regression")
+        self.assertEqual(code, 3, out)
+        self.assertIn("changed during the run", out)
+        self.assertAttackHappened()
+
+    def test_grader_runs_from_the_bytes_loaded_at_start(self):
+        self.p.add_case("R1", "P")
+        assets = pe.load_assets(self.p.eval)
+        self.p.write("graders/g_ok.py", fixture.GRADER_ALWAYS_PASS)       # changed after loading
+        case = assets.cases["R1"]
+        with tempfile.TemporaryDirectory() as tmp:
+            verdict, _ = pe.run_grader(assets, "g_ok", case, self.p.path("refs/R1-bad.json"), tmp)
+        self.assertEqual(verdict, "fail")
+
+    def test_a16_adapter_deletes_the_run_directory_contents(self):
+        self.p.add_case("R1", "D")
+        code, out, rd = self.p.gate("regression")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(self.p.trials(rd)), 3)
+        for rel, want in self.p.result(rd)["artifacts_sha256"].items():
+            with open(os.path.join(rd, *rel.split("/")), "rb") as fh:
+                self.assertEqual(hashlib.sha256(fh.read()).hexdigest(), want, rel)
+
+    def test_a17_unwritable_run_directory_is_blocked_even_when_the_case_failed(self):
+        def restore():
+            runs = self.p.path("runs")
+            for dp, dns, fns in os.walk(runs):
+                os.chmod(dp, 0o700)
+            os.chmod(runs, 0o700)
+        self.addCleanup(restore)
+        self.p.add_case("R1", "W")
+        code, out, _ = self.p.gate("regression")
+        self.assertEqual(code, 3, out)                      # BLOCKED > FAIL
+        self.assertIn("artifacts not preserved", out)
+
+    def test_trusted_pass_is_refused_after_an_invalid_evidence_attempt(self):
+        self.p.add_case("R1", "XPPP")
+        self.p.init_git()
+        code, out, rd = self.p.gate("regression", trusted_ref="main")
+        self.assertEqual(code, 3, out)
+        self.assertIn("evidence_schema_verified", out)
+        code, out, _ = self.p.gate("regression")            # local mode: the retry may recover
+        self.assertEqual(code, 0, out)
+
+    def test_adapter_gets_a_private_tmpdir(self):
+        self.p.add_case("R1", "P")
+        with open(self.p.adapter, "a") as fh:
+            fh.write("\nimport tempfile as _t\nopen(os.path.join(state, 'tmpdir.txt'), 'a').write(_t.gettempdir() + '\\n')\n")
+        self.p.gate("regression")
+        seen = fixture.read_text(os.path.join(self.tmp, "state-1", "tmpdir.txt")).split()
+        self.assertTrue(seen)
+        self.assertTrue(all("pe-trial-" in d for d in seen), seen)
 
 
 class TestAdapterPaths(Base):

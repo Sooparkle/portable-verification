@@ -117,6 +117,8 @@ python3 -I .eval/pe.py gate all --eval-dir .eval --adapter-cmd '["python3","-I",
 
 **Two modes, and why.** A local run uses the working tree's `.eval/` and prints `MODE: local (unofficial)`: it is feedback, not a verdict, because whoever changes the code under test can also change the graders. A trusted run (`--trusted-ref`) grades with a copy extracted from a protected ref, refuses to run if the running `pe.py` differs from that ref's `pe.py`, and compares the working tree's evaluation assets with the ref's: a difference can only end as `NEEDS_REVIEW`, never `PASS`. A trusted PASS needs seven invariants (listed in `result.json`). Precedence: BLOCKED > FAIL > NEEDS_REVIEW > PASS.
 
+The adapter runs with the same user rights as `pe.py`. The tool runs graders from the bytes it loaded at the start, re-hashes the assets before every grading step, and writes trial records only at the end, so an adapter that rewrites a grader or deletes records during the run ends in BLOCKED. That is detection, not isolation: for an official verdict the system under test must also run as a different OS user or in a separate container, which the tool cannot check (see `docs/contracts.md` section 1).
+
 Wire it into verification with one line in `checks.txt` (local feedback), and run the trusted gate in CI:
 
 ```text

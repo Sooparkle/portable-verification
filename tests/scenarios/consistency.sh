@@ -19,6 +19,14 @@ done
 assert_eq "release tooling and the skills folder agree on the skills" "portable-eval portable-verification" "$(ls "$ROOT/skills" | tr '\n' ' ' | sed 's/ $//')"
 assert_file "LICENSE present" "$ROOT/LICENSE"
 
+# check-release.sh's expected CI jobs follow the matrix in ci.yml
+oses=$(sed -n 's/^ *os: \[\(.*\)\]$/\1/p' "$ROOT/.github/workflows/ci.yml" | tr -d ' "')
+pys=$(sed -n 's/^ *python: \[\(.*\)\]$/\1/p' "$ROOT/.github/workflows/ci.yml" | tr -d ' "')
+want="lint"
+IFS=','; for o in $oses; do for p in $pys; do want="$want;test ($o, $p)"; done; done; unset IFS
+got=$(sed -n 's/^EXPECTED_CHECKS="\(.*\)"$/\1/p' "$ROOT/build/check-release.sh")
+assert_eq "check-release EXPECTED_CHECKS matches the ci.yml matrix" "$(echo "$want" | tr ';' '\n' | sort)" "$(echo "$got" | tr ';' '\n' | sort)"
+
 # scripts are executable in git's index
 for f in install.sh build/build-release.sh build/check-release.sh skills/portable-verification/scripts/verify.sh skills/portable-verification/scripts/plant.sh skills/portable-eval/scripts/plant.sh skills/portable-eval/scripts/pe.py; do
   if [ -x "$ROOT/$f" ]; then ok "executable: $f"; else not_ok "executable: $f"; fi

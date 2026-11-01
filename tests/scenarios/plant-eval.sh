@@ -63,6 +63,11 @@ run_plant_e --target "$WORK/nope" --check;       assert_eq "missing target rejec
 run_plant_e --target "$SKILL_E";                 assert_eq "target = skill source folder rejected" 1 "$CODE"
 run_plant_e --target;                            assert_eq "option without value rejected" 1 "$CODE"
 assert_eq "rejections wrote nothing" "$before" "$(fingerprint "$p")"
+p3=$(new_repo kind); mkdir -p "$p3/.eval"; echo x > "$p3/.eval/graders"; before=$(fingerprint "$p3")
+run_plant_e --target "$p3" --agent claude
+assert_eq ".eval/graders as a regular file is rejected" 1 "$CODE"
+assert_contains "the reason names the path" "$OUT" "not a directory: .eval/graders"
+assert_eq "rejected wrong-kind path wrote nothing" "$before" "$(fingerprint "$p3")"
 
 # without python3 the plant refuses (PATH farm with no python3)
 mkdir -p "$WORK/farm-nopy"

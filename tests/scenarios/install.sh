@@ -186,6 +186,19 @@ assert_eq "eval pre-flight failure (no git) fails the install" 1 "$CODE"
 assert_contains "pre-flight failure names the reason" "$OUT" "git not found"
 assert_eq "no half install: verification was not written either" "$before" "$(fingerprint "$t")"
 
+# A path that exists with the wrong kind must be caught by the pre-flight check, before anything is written
+for conflict in ".eval" ".eval/graders" ".claude/skills/portable-eval" ".github/workflows/eval.yml/"; do
+  t="$WORK/t-kind-$(echo "$conflict" | tr -c 'a-z\n' '_')"; mkdir -p "$t"
+  case "$conflict" in
+    */) mkdir -p "$t/${conflict%/}" ;;                       # a directory where a file is expected
+    *) mkdir -p "$t/$(dirname "$conflict")"; echo x > "$t/$conflict" ;;   # a file where a directory is expected
+  esac
+  before=$(fingerprint "$t")
+  run_install "$good" "$URL" -- --skill both --target "$t" --agent claude --ci github
+  assert_eq "pre-flight rejects a wrong kind of path: $conflict" 1 "$CODE"
+  assert_eq "wrong kind of path leaves the target untouched (also verification): $conflict" "$before" "$(fingerprint "$t")"
+done
+
 run_install "$good" -- --skill bogus
 assert_eq "unknown --skill fails" 1 "$CODE"
 run_install "$good" -- --skill

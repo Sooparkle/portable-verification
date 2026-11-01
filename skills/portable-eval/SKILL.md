@@ -33,7 +33,7 @@ Precedence: BLOCKED > FAIL > NEEDS_REVIEW > PASS. Wire the gate into `.verificat
 
 ## Adding a case
 1. Copy `references/case.template.json` to `.eval/cases/<id>.json`.
-2. Save the evidence of the real past failure as `.eval/refs/<id>-bad.json` and pin its hash: `shasum -a 256 .eval/refs/<id>-bad.json` goes into `known_bad_sha256`. A regression case without a known-bad reference is rejected.
+2. Graders must be single self-contained files (the tool runs a copy of the bytes it loaded at the start). Save the evidence of the real past failure as `.eval/refs/<id>-bad.json` and pin its hash: `shasum -a 256 .eval/refs/<id>-bad.json` goes into `known_bad_sha256`. A regression case without a known-bad reference is rejected.
 3. Run `validate`, then the gate. The grader must fail the known-bad evidence (self-test) or the run is BLOCKED. Every grader in use must be failed by at least one known-bad evidence.
 4. To put a case under the safety gate, give it a criterion listed in `risk_tiers.critical` (or `type: safety`). `severity: critical` alone does not select it; `validate` warns about that.
 

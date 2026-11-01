@@ -117,6 +117,8 @@ python3 -I .eval/pe.py gate all --eval-dir .eval --adapter-cmd '["python3","-I",
 
 **두 가지 모드와 그 이유.** 로컬 실행은 작업 트리의 `.eval/`을 쓰고 `MODE: local (unofficial)`을 출력합니다. 평가 대상 코드를 바꾸는 쪽이 채점기도 바꿀 수 있으므로 이것은 판정이 아니라 피드백입니다. trusted 실행(`--trusted-ref`)은 보호된 ref에서 추출한 사본으로 채점하고, 실행 중인 `pe.py`가 그 ref의 `pe.py`와 다르면 실행을 거부하며, 작업 트리의 평가 자산을 ref의 것과 비교합니다. 차이가 있으면 결과는 `NEEDS_REVIEW`까지만 가능하고 `PASS`가 될 수 없습니다. trusted PASS에는 7개 불변조건이 필요합니다(`result.json`에 기록). 우선순위: BLOCKED > FAIL > NEEDS_REVIEW > PASS.
 
+어댑터는 `pe.py`와 같은 사용자 권한으로 실행됩니다. 도구는 시작할 때 읽어 둔 바이트로 채점기를 실행하고, 매 채점 전에 자산 해시를 다시 확인하고, 시행 기록은 마지막에만 씁니다. 그래서 실행 중에 채점기를 고치거나 기록을 지우는 어댑터는 BLOCKED로 끝납니다. 다만 이것은 격리가 아니라 탐지입니다. 공식 판정이 되려면 평가 대상 시스템을 다른 OS 사용자나 별도 컨테이너에서 실행해야 하고, 도구는 그것을 확인할 수 없습니다(`docs/contracts.md` 1절).
+
 verification과는 `checks.txt`의 한 줄로 연결하고(로컬 피드백), trusted 게이트는 CI에서 실행합니다.
 
 ```text

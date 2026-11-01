@@ -97,6 +97,10 @@ assert_eq "--check succeeds" 0 "$CODE"
 assert_eq "--check writes nothing" "$before" "$(fingerprint "$p")"
 run_plant --target "$p" --check --ci gitlab
 assert_eq "--check rejects an unsupported --ci" 1 "$CODE"
+p2=$(new_repo kind); echo x > "$p2/.verification"; before=$(fingerprint "$p2")
+run_plant --target "$p2" --agent claude
+assert_eq ".verification as a regular file is rejected before writing" 1 "$CODE"
+assert_eq "rejected wrong-kind path wrote nothing" "$before" "$(fingerprint "$p2")"
 
 # ---- rejection: nothing may be created --------------------------------
 p=$(new_repo reject)

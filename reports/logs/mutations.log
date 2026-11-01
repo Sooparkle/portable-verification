@@ -1,0 +1,30 @@
+caught   safety gate never fails on a violation             4 of 45 selected tests failed
+caught   grader self-test skipped                           4 of 4 selected tests failed
+caught   known_bad hash pin not checked                     1 of 2 selected tests failed
+caught   trusted asset comparison ignored                   5 of 12 selected tests failed
+caught   regression blocks on a single failure              3 of 3 selected tests failed
+caught   running pe.py not compared with the ref            1 of 1 selected tests failed
+caught   policy coverage not checked                        2 of 3 selected tests failed
+caught   oneOf accepts several matches                      1 of 6 selected tests failed
+caught   decision-after-the-fact check removed              1 of 12 selected tests failed
+caught   decision_fixed_at not compared between manifests   1 of 2 selected tests failed
+caught   assets not re-hashed during the run                3 of 8 selected tests failed
+caught   evidence size cap removed                          1 of 1 selected tests failed
+caught   only the final attempt counts for the evidence invariant 1 of 1 selected tests failed
+caught   failed artifact write keeps a FAIL                 1 of 1 selected tests failed
+caught   NaN accepted in JSON                               1 of 2 selected tests failed
+caught   items: false ignored                               1 of 1 selected tests failed
+SURVIVED catch-all removed in compare (unexpected errors become tracebacks) 0 of 1 selected tests failed
+caught   non-object env in the system manifest not rejected 1 of 1 selected tests failed
+caught   null/empty manifest fields tolerated               1 of 1 selected tests failed
+caught   unrunnable trial counted as pass                   1 of 1 selected tests failed
+caught   stragglers of the process group not killed         1 of 3 selected tests failed
+caught   extra trials never scheduled                       4 of 5 selected tests failed
+caught   relative adapter paths not resolved                1 of 3 selected tests failed
+caught   grader-level self-test coverage disabled           3 of 27 selected tests failed
+caught   verify.sh no longer flags .eval/                   1 of 1 selected tests failed
+caught   install.sh hash comparison off                     5 of 97 selected tests failed
+caught   install.sh pre-flight --check skipped              5 of 97 selected tests failed
+caught   install.sh compares with the wrong skill's pin     22 of 97 selected tests failed
+caught   eval plant.sh: wrong-kind paths not checked        2 of 42 selected tests failed
+SOME MUTANTS SURVIVED OR WERE NOT APPLIED

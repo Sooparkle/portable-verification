@@ -4,7 +4,13 @@ The adapter reads the case's input.plan, a string with one letter per call to th
   P pass            F task failure       V policy violation (egress, allowed=false)
   I infra failure   S system failure     X invalid JSON       C crash (exit 1)
   T hang            N no policy_coverage A observer inactive  E forbidden _executor field
-  B oversized       L leak probe         H expected-leak probe
+  B oversized (schema-valid, only the size cap rejects it)
+  L leak probe      H expected-leak probe  U observer "unknown"   Z NaN in the evidence
+  R rewrite the extracted ref grader during a trusted run, then fail
+  Q add a file to the extracted ref snapshots during a trusted run
+  G rewrite the working tree grader during the run, then fail
+  D delete everything under .eval/runs/ during the run, then pass
+  W make every directory under .eval/runs/ read-only, then fail
 A per-case counter file in $PE_TEST_STATE makes the sequence advance across calls and re-runs.
 """
 import hashlib
@@ -67,7 +73,41 @@ elif c == "N":
                       "final_state": {"ok": True}, "trajectory": [], "policy_events": []}))
 elif c == "A": ev(policy_coverage={"egress": "inactive"})
 elif c == "E": ev(_executor={"trial": 1})
-elif c == "B": print(json.dumps({"termination_reason": "completed", "env_fingerprint": "fp", "pad": "x" * (6 * 1024 * 1024)}))
+elif c == "B": ev(final_output="x" * (6 * 1024 * 1024))
+elif c == "U": ev(policy_coverage={"egress": "unknown"})
+elif c == "Z":
+    print('{"termination_reason": "completed", "env_fingerprint": "fp", "final_output": "x", "final_state": {"ok": true}, '
+          '"trajectory": [], "policy_events": [], "policy_coverage": {"egress": "active"}, "cost": NaN}')
+elif c in "RQ":
+    import glob
+    tmp = os.environ["PE_TEST_TMP"]
+    hits = 0
+    if c == "R":
+        for g in glob.glob(os.path.join(tmp, "pe-ref-*", ".eval", "graders", "*.py")):
+            open(g, "w").write("import sys\nsys.exit(0)\n")
+            hits += 1
+    else:
+        for e in glob.glob(os.path.join(tmp, "pe-ref-*", ".eval")):
+            os.makedirs(os.path.join(e, "snapshots", "snap-1"), exist_ok=True)
+            open(os.path.join(e, "snapshots", "snap-1", "planted.json"), "w").write("{}")
+            hits += 1
+    open(os.path.join(state, "tampered.txt"), "a").write("%d\n" % hits)   # lets the test check the attack happened
+    ev(final_state={"ok": c == "Q"})
+elif c == "G":
+    open(os.path.join(os.environ["PE_TEST_ROOT"], ".eval", "graders", "g_ok.py"), "w").write("import sys\nsys.exit(0)\n")
+    open(os.path.join(state, "tampered.txt"), "a").write("1\n")
+    ev(final_state={"ok": False})
+elif c in "DW":
+    import shutil
+    runs = os.path.join(os.environ["PE_TEST_ROOT"], ".eval", "runs")
+    for d in os.listdir(runs) if os.path.isdir(runs) else []:
+        full = os.path.join(runs, d)
+        if c == "D":
+            shutil.rmtree(full, ignore_errors=True)
+        else:
+            for dp, dns, fns in os.walk(full):
+                os.chmod(dp, 0o500)
+    ev(final_state={"ok": c == "D"})
 elif c == "L": ev(final_state={"ok": True, "leak": os.environ.get("SECRET_TOKEN", "")})
 elif c == "H": ev(final_state={"ok": True, "saw_expected": "expected" in open(os.environ["PE_CASE_FILE"]).read()})
 elif c == "O":
@@ -97,7 +137,7 @@ def default_spec():
         "graders": {"g_ok": {"path": "graders/g_ok.py"}, "g_policy": {"path": "graders/g_policy.py"}},
         "risk_tiers": {"critical": ["PC1"], "normal": ["SC1"]},
         "reference": {"as_of": "2026-01-01", "snapshot_id": "snap-1"},
-        "adapter": {"env_allow": ["PE_TEST_STATE"], "timeout_s": 3},
+        "adapter": {"env_allow": ["PE_TEST_STATE", "PE_TEST_TMP", "PE_TEST_ROOT"], "timeout_s": 3},
         "decision": {"alpha_one_sided": 0.025, "power": 0.8,
                      "margins": {"non_inferiority": 0.05, "equivalence": 0.03, "cost_improvement": 0.2},
                      "owner": "tester", "fixed_at": "2026-01-01", "safety_trials": 3},
@@ -217,7 +257,8 @@ class Project:
         self.counter += 1
         state = os.path.join(self.base, "state-%d" % self.counter)
         os.makedirs(state)
-        env = dict(os.environ, PE_TEST_STATE=state)
+        import tempfile
+        env = dict(os.environ, PE_TEST_STATE=state, PE_TEST_TMP=tempfile.gettempdir(), PE_TEST_ROOT=self.root)
         env.update(env_extra or {})
         cmd = [sys.executable, "-I", pe or self.path("pe.py"), "gate", gate, "--eval-dir", ".eval",
                "--adapter-cmd", self.adapter_cmd()]
