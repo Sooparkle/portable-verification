@@ -15,7 +15,7 @@
 ### A. clone 후 심기
 
 ```bash
-git clone https://github.com/OWNER/portable-verification.git
+git clone https://github.com/Sooparkle/portable-verification.git
 cd portable-verification && git checkout v0.1.0
 bash skills/portable-verification/scripts/plant.sh --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci github
 ```
@@ -27,7 +27,7 @@ bash skills/portable-verification/scripts/plant.sh --target ~/work/my-app --agen
 내려받아 읽고 실행하는 방법을 권장합니다.
 
 ```bash
-curl -fsSLo install.sh https://raw.githubusercontent.com/OWNER/portable-verification/v0.1.0/install.sh
+curl -fsSLo install.sh https://raw.githubusercontent.com/Sooparkle/portable-verification/v0.1.0/install.sh
 less install.sh
 bash install.sh --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci github
 ```
@@ -35,7 +35,7 @@ bash install.sh --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci g
 읽지 않은 코드를 실행하게 되지만, 파이프로 바로 실행할 수도 있습니다.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/portable-verification/v0.1.0/install.sh | bash -s -- --target ~/work/my-app --agent claude
+curl -fsSL https://raw.githubusercontent.com/Sooparkle/portable-verification/v0.1.0/install.sh | bash -s -- --target ~/work/my-app --agent claude
 ```
 
 설치기는 자신과 같은 버전의 릴리스 압축파일을 받아 `install.sh` 안에 적힌 값과 sha256을 비교합니다. 다운로드가 실패하거나 해시가 다르면 프로젝트를 건드리기 전에 멈춥니다. 이는 손상되었거나 바꿔치기된 릴리스 파일을 막아 줍니다. 저장소 자체가 탈취되어 `install.sh`와 해시가 함께 바뀐 경우는 막지 못하므로, 먼저 `install.sh`를 읽는 것이 대비책입니다.

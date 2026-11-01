@@ -17,8 +17,8 @@
 set -euo pipefail
 
 VERSION="0.1.0"
-ARCHIVE_SHA256="UNSET"            # filled in at release time by build/build-release.sh output
-REPO="UNSET/portable-verification" # owner/name on GitHub, filled in at release time
+ARCHIVE_SHA256="c92cff0f6476432ca6299638f7bfb5c47cff1fa6bd9fd88a929720c961cae125"   # sha256 of portable-verification-skill-v$VERSION.tar.gz (build/build-release.sh)
+REPO="Sooparkle/portable-verification"      # owner/name on GitHub
 NAME=portable-verification
 
 die() { echo "install: $*" >&2; exit 1; }

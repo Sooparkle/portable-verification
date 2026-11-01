@@ -31,9 +31,11 @@ assert_not_contains "archive has no .git content" "$listing" ".git"
 
 # ---- patched installers ------------------------------------------------
 good="$WORK/install-good.sh"
-sed "s/^ARCHIVE_SHA256=\"UNSET\"/ARCHIVE_SHA256=\"$sum\"/" "$INSTALL_SRC" > "$good"
+sed "s/^ARCHIVE_SHA256=\"[^\"]*\"/ARCHIVE_SHA256=\"$sum\"/" "$INSTALL_SRC" > "$good"
 wrong="$WORK/install-wrong.sh"
-sed "s/^ARCHIVE_SHA256=\"UNSET\"/ARCHIVE_SHA256=\"$(printf '0%.0s' $(seq 64))\"/" "$INSTALL_SRC" > "$wrong"
+sed "s/^ARCHIVE_SHA256=\"[^\"]*\"/ARCHIVE_SHA256=\"$(printf '0%.0s' $(seq 64))\"/" "$INSTALL_SRC" > "$wrong"
+unpinned="$WORK/install-unpinned.sh"
+sed 's/^ARCHIVE_SHA256="[^"]*"/ARCHIVE_SHA256="UNSET"/' "$INSTALL_SRC" > "$unpinned"
 
 # run_install SCRIPT [env...] -- args -> OUT/CODE ; env goes before "--"
 run_install() {
@@ -48,9 +50,9 @@ run_install() {
   fi
 }
 
-# the repository copy has no pinned hash and must refuse
+# a copy without a pinned hash (development checkout) must refuse
 t="$WORK/t-unset"; mkdir -p "$t"; before=$(fingerprint "$t")
-run_install "$INSTALL_SRC" PV_BASE_URL="file://$A" -- --target "$t" --agent claude
+run_install "$unpinned" PV_BASE_URL="file://$A" -- --target "$t" --agent claude
 assert_eq "unpinned install.sh refuses" 1 "$CODE"
 assert_contains "refusal explains why" "$OUT" "no pinned sha256"
 assert_eq "unpinned refusal leaves target untouched" "$before" "$(fingerprint "$t")"

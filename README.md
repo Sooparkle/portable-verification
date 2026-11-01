@@ -15,7 +15,7 @@ Needs `bash`, `git`, `perl`. The installer also needs `curl`, `tar`, `gzip`, and
 ### A. Clone, then plant
 
 ```bash
-git clone https://github.com/OWNER/portable-verification.git
+git clone https://github.com/Sooparkle/portable-verification.git
 cd portable-verification && git checkout v0.1.0
 bash skills/portable-verification/scripts/plant.sh --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci github
 ```
@@ -27,7 +27,7 @@ bash skills/portable-verification/scripts/plant.sh --target ~/work/my-app --agen
 Download, read, then run (recommended):
 
 ```bash
-curl -fsSLo install.sh https://raw.githubusercontent.com/OWNER/portable-verification/v0.1.0/install.sh
+curl -fsSLo install.sh https://raw.githubusercontent.com/Sooparkle/portable-verification/v0.1.0/install.sh
 less install.sh
 bash install.sh --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci github
 ```
@@ -35,7 +35,7 @@ bash install.sh --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci g
 Or pipe it, which runs code you have not read:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/portable-verification/v0.1.0/install.sh | bash -s -- --target ~/work/my-app --agent claude
+curl -fsSL https://raw.githubusercontent.com/Sooparkle/portable-verification/v0.1.0/install.sh | bash -s -- --target ~/work/my-app --agent claude
 ```
 
 The installer downloads the release archive of its own version and compares its sha256 with the value written inside `install.sh`. If the download fails or the hash differs, it stops before touching your project. This protects against a corrupted or swapped release asset. It does not protect you if the repository itself is compromised and `install.sh` and the hash are replaced together; reading `install.sh` first is the mitigation.
