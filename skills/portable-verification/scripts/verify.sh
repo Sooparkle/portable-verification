@@ -24,6 +24,7 @@ DEFAULT_FLAG_REGEX="$DEFAULT_FLAG_REGEX"'|[._-](test|spec)\.[A-Za-z0-9]+$|(^|/)t
 DEFAULT_FLAG_REGEX="$DEFAULT_FLAG_REGEX"'|(^|/)(jest|vitest|playwright|cypress|karma)\.config\.[A-Za-z0-9]+$'
 DEFAULT_FLAG_REGEX="$DEFAULT_FLAG_REGEX"'|(^|/)(pytest\.ini|conftest\.py|tox\.ini|phpunit\.xml)$'
 DEFAULT_FLAG_REGEX="$DEFAULT_FLAG_REGEX"'|(^|/)\.verification/(checks\.txt|verify\.sh)$'
+DEFAULT_FLAG_REGEX="$DEFAULT_FLAG_REGEX"'|(^|/)\.eval/(spec\.json|cases/|graders/|schemas/|refs/|snapshots/|pe\.py)'
 FLAG_PATH_REGEX="${FLAG_PATH_REGEX:-$DEFAULT_FLAG_REGEX}"
 
 ROOT="${VERIFY_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"

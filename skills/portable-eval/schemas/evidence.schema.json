@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "portable-eval evidence (written by an adapter to stdout)",
+  "type": "object",
+  "required": ["termination_reason", "env_fingerprint"],
+  "additionalProperties": false,
+  "properties": {
+    "final_output": {},
+    "final_state": {"type": "object"},
+    "trajectory": {"type": "array", "items": {"type": "object"}},
+    "policy_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "target", "allowed"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {"type": "string", "minLength": 1},
+          "target": {"type": "string"},
+          "allowed": {"type": "boolean"}
+        }
+      }
+    },
+    "policy_coverage": {
+      "type": "object",
+      "additionalProperties": {"enum": ["active", "inactive", "unknown"]}
+    },
+    "tokens": {"type": "integer", "minimum": 0},
+    "latency_ms": {"type": "number", "minimum": 0},
+    "cost": {"type": "number", "minimum": 0},
+    "termination_reason": {
+      "enum": ["completed", "container_start_failed", "env_init_failed", "provider_unavailable",
+               "budget_exceeded", "tool_error", "max_turns", "loop_detected"]
+    },
+    "env_fingerprint": {"type": "string", "minLength": 1}
+  },
+  "if": {"required": ["termination_reason"], "properties": {"termination_reason": {"const": "completed"}}},
+  "then": {"required": ["final_output", "final_state", "trajectory", "policy_events", "policy_coverage"]}
+}
