@@ -1,0 +1,37 @@
+# Runs the declared checks on every pull request. A non-zero exit fails the job.
+# To block merges, mark the "verify" job as a required status check in branch protection.
+# NEEDS_REVIEW (exit 2) clears when someone with label rights adds the "tests-reviewed" label
+# after reading the flagged test/config diff.
+name: verification
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # verify.sh needs the base branch to find changed test files
+      # Project setup: install the runtimes and dependencies your checks need, for example:
+      # - uses: actions/setup-node@v4
+      #   with: { node-version: 22, cache: npm }
+      # - run: npm ci
+      # - run: npx playwright install --with-deps chromium
+      - name: Run declared checks
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+          CHECK_TIMEOUT: "900"
+          TESTS_REVIEWED: ${{ contains(github.event.pull_request.labels.*.name, 'tests-reviewed') && '1' || '' }}
+        run: bash .verification/verify.sh
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-evidence
+          path: .verification/evidence/
+          include-hidden-files: true   # the path starts with a dot folder
+          retention-days: 14
