@@ -4,6 +4,7 @@ import copy
 import importlib.util
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -313,6 +314,14 @@ class TestGateLocal(Base):
         self.assertEqual(code, 3, out)
         self.assertIn("manifest invalid", out)
 
+    def test_severity_label_alone_does_not_select_the_safety_gate_and_warns(self):
+        self.p.add_case("R1", "P", severity="critical")        # label only; SC1 is not a critical criterion
+        code, out = self.p.run_pe("validate", "--eval-dir", ".eval")
+        self.assertEqual(code, 0, out)
+        self.assertIn("warning: case R1 has severity 'critical'", out)
+        code, out, _ = self.p.gate("safety")
+        self.assertEqual(code, 4, out)                          # nothing selected
+
     def test_validate_subcommand(self):
         self.p.add_case("R1", "P", good=True)
         code, out = self.p.run_pe("validate", "--eval-dir", ".eval")
@@ -353,6 +362,29 @@ class TestContracts(Base):
         code, out, _ = self.p.gate("regression")
         self.assertEqual(code, 3, out)
         self.assertIn("self-test failed", out)
+
+    def test_a6_always_pass_grader_hidden_behind_a_second_criterion(self):
+        # known_bad violates PC1 only; SC1's grader is replaced by an always-pass one.
+        bad = good_evidence(marker="known_bad")
+        bad["policy_events"] = [{"type": "egress", "target": "evil.example", "allowed": False}]
+        self.p.add_case("RC1", "P", criteria=("SC1", "PC1"), bad_evidence=bad)
+        self.p.write("graders/g_ok.py", fixture.GRADER_ALWAYS_PASS)
+        code, out, _ = self.p.gate("regression")
+        self.assertEqual(code, 3, out)
+        self.assertIn("g_ok", out)
+
+    def test_every_used_grader_must_fail_some_known_bad(self):
+        # same shape with honest graders: g_ok never sees a known-bad that it should fail -> still BLOCKED,
+        # because the self-test cannot show that g_ok discriminates at all
+        bad = good_evidence(marker="known_bad")
+        bad["policy_events"] = [{"type": "egress", "target": "evil.example", "allowed": False}]
+        self.p.add_case("RC1", "P", criteria=("SC1", "PC1"), bad_evidence=bad)
+        code, out, _ = self.p.gate("regression")
+        self.assertEqual(code, 3, out)
+        # adding a case whose known_bad fails SC1 restores coverage
+        self.p.add_case("R1", "P")
+        code, out, _ = self.p.gate("regression")
+        self.assertEqual(code, 0, out)
 
     def test_selftest_known_good_must_pass(self):
         self.p.add_case("R1", "P", good=True)
@@ -672,6 +704,146 @@ class TestCompare(Base):
         pb = os.path.join(self.tmp, "m.json"); write_json(pb, data)
         code, out = self.compare(a, pb)
         self.assertEqual(code, 3, out)
+
+
+# ---------------------------------------------------------------------------
+class TestSimulation(unittest.TestCase):
+    """Seeded simulation through the real scheduling and decision functions (not a re-derivation of the formulas)."""
+
+    @staticmethod
+    def simulate(q, n, seed):
+        rng = random.Random(seed)
+        blocked = 0
+        slots_total = 0
+        for _ in range(n):
+            def run(phase, index):
+                return {"phase": phase, "outcome": "fail" if rng.random() < q else "pass", "class": "normal", "criteria": {}}
+            slots = []
+            pe.schedule_regression(run, slots)
+            slots_total += len(slots)
+            if pe.decide_regression(slots) == "fail":
+                blocked += 1
+        return blocked / n, slots_total / n
+
+    def assertClose(self, emp, exact, n):
+        sigma = (exact * (1 - exact) / n) ** 0.5
+        self.assertLess(abs(emp - exact), 4 * sigma + 2e-5, (emp, exact))
+
+    def test_false_block_rate_per_case(self):
+        n = 400000
+        for rel, seed in ((0.99, 1), (0.995, 2), (0.999, 3)):
+            emp, _ = self.simulate(1 - rel, n, seed)
+            self.assertClose(emp, pe.p_block_case(1 - rel), n)
+
+    def test_scaled_to_100_cases_matches_the_document(self):
+        n = 400000
+        emp, _ = self.simulate(0.01, n, 11)
+        self.assertEqual(round(100 * (1 - (1 - emp) ** 100), 0), 11.0)     # document: 11.1%
+
+    def test_regression_detection(self):
+        n = 200000
+        for success, seed, doc in ((0.5, 4, 82.8), (0.7, 5, 50.6), (0.8, 6, 29.1)):
+            emp, _ = self.simulate(1 - success, n, seed)
+            self.assertClose(emp, pe.regression_block_prob(success), n)
+            self.assertAlmostEqual(100 * emp, doc, delta=0.7)
+
+    def test_expected_cost_in_trials_per_case(self):
+        q = 0.05
+        _, mean_slots = self.simulate(q, 200000, 7)
+        exactly_one = 3 * q * (1 - q) ** 2
+        self.assertAlmostEqual(mean_slots, 3 + 3 * exactly_one, delta=0.02)
+
+    def test_safety_is_stricter_than_regression(self):
+        rng = random.Random(8)
+        q, n, flaky_pass, safety_fail = 0.02, 100000, 0, 0
+        for _ in range(n):
+            def run(phase, index):
+                bad = rng.random() < q
+                return {"phase": phase, "outcome": "fail" if bad else "pass", "class": "normal",
+                        "criteria": {"PC1": "fail" if bad else "pass"}}
+            slots = []
+            pe.schedule_regression(run, slots)
+            pe.schedule_safety(run, slots, 3)
+            if pe.decide_regression(slots) in ("pass", "flaky") and pe.decide_safety(slots, ["PC1"]) == "fail":
+                flaky_pass += 1
+            if pe.decide_safety(slots, ["PC1"]) == "fail":
+                safety_fail += 1
+        self.assertGreater(flaky_pass, 0)                 # the two gates really interpret the same trials differently
+        self.assertGreaterEqual(safety_fail, flaky_pass)
+
+
+class TestAdapterPaths(Base):
+    def test_relative_adapter_script_path_is_resolved_against_the_start_directory(self):
+        self.p.add_case("R1", "P")
+        os.makedirs(os.path.join(self.p.root, "adapters"))
+        shutil.copy(self.p.adapter, os.path.join(self.p.root, "adapters", "run.py"))
+        state = os.path.join(self.tmp, "state-rel")
+        os.makedirs(state)
+        cmd = [sys.executable, "-I", self.p.path("pe.py"), "gate", "regression", "--eval-dir", ".eval",
+               "--adapter-cmd", json.dumps([sys.executable, "adapters/run.py"])]
+        r = subprocess.run(cmd, cwd=self.p.root, env=dict(os.environ, PE_TEST_STATE=state),
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertEqual(r.returncode, 0, r.stdout.decode())
+
+    def test_missing_adapter_script_is_blocked_not_failed(self):
+        self.p.add_case("R1", "P")
+        state = os.path.join(self.tmp, "state-missing")
+        os.makedirs(state)
+        cmd = [sys.executable, "-I", self.p.path("pe.py"), "gate", "regression", "--eval-dir", ".eval",
+               "--adapter-cmd", json.dumps([sys.executable, "adapters/nope.py"])]
+        r = subprocess.run(cmd, cwd=self.p.root, env=dict(os.environ, PE_TEST_STATE=state),
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertEqual(r.returncode, 3, r.stdout.decode())
+
+    def test_absolutize_unit(self):
+        d = tempfile.mkdtemp(dir=self.tmp)
+        open(os.path.join(d, "run.py"), "w").close()
+        self.assertEqual(pe.absolutize_adapter(["python3", "run.py", "-x", "missing"], d),
+                         ["python3", os.path.join(d, "run.py"), "-x", "missing"])
+        self.assertEqual(pe.absolutize_adapter(["./run.py"], d), [os.path.join(d, "./run.py")])
+
+
+class TestProcessHygiene(Base):
+    def alive(self, pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def test_background_children_of_the_adapter_do_not_survive(self):
+        self.p.add_case("R1", "O")
+        self.p.gate("regression")
+        state = os.path.join(self.tmp, "state-1", "orphan.pids")
+        pids = [int(x) for x in fixture.read_text(state).split()]
+        self.assertTrue(pids)
+        import time
+        time.sleep(0.3)
+        self.assertEqual([p for p in pids if self.alive(p)], [])
+
+    def test_hanging_adapter_leaves_no_process_behind(self):
+        self.p.spec["adapter"]["timeout_s"] = 1
+        self.p.save_spec()
+        self.p.add_case("R1", "T")
+        code, out, _ = self.p.gate("regression")
+        self.assertEqual(code, 1, out)
+        r = subprocess.run(["pgrep", "-f", self.p.adapter], stdout=subprocess.PIPE)
+        self.assertEqual(r.stdout.decode().split(), [])
+
+    def test_trusted_gate_from_a_subdirectory(self):
+        self.p.add_case("R1", "P")
+        self.p.init_git()
+        sub = os.path.join(self.p.root, "sub", "deeper")
+        os.makedirs(sub)
+        state = os.path.join(self.tmp, "state-sub")
+        os.makedirs(state)
+        env = dict(os.environ, PE_TEST_STATE=state)
+        cmd = [sys.executable, "-I", self.p.path("pe.py"), "gate", "regression", "--eval-dir", "../../.eval",
+               "--adapter-cmd", self.p.adapter_cmd(), "--trusted-ref", "main",
+               "--system-manifest", self.p.path("system-manifest.json"), "--out", os.path.join(self.tmp, "out")]
+        r = subprocess.run(cmd, cwd=sub, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertEqual(r.returncode, 0, r.stdout.decode())
+        self.assertIn("MODE: trusted (ref=", r.stdout.decode())
 
 
 if __name__ == "__main__":

@@ -1,0 +1,46 @@
+# Official eval gate. The gate tool and the evaluation assets come from the BASE commit of the
+# pull request, never from the PR's own working tree.
+#
+# What this does NOT protect: a pull request can edit this workflow file itself. Protect
+# .github/ and .eval/ with CODEOWNERS + required code-owner review (see CODEOWNERS.example),
+# and mark the "eval-gate" job as a required status check. Those are repository settings;
+# pe.py cannot enforce them. Do not switch this to pull_request_target: that would run
+# untrusted pull request code with write permissions.
+name: eval
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  eval-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout the pull request
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: pr
+      - name: Checkout the trusted base commit (gate tool and assets)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+      # Install what your adapter needs here (runtimes, dependencies).
+      - name: Run the gate from the trusted tool
+        working-directory: pr
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 -I ../trusted/.eval/pe.py gate all \
+            --eval-dir .eval \
+            --trusted-ref "$BASE_SHA" \
+            --adapter-cmd '["python3","-I","adapters/run.py"]'
+      - name: Keep trial records and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-runs
+          path: pr/.eval/runs/
+          include-hidden-files: true
+          retention-days: 30

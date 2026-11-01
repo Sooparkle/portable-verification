@@ -11,11 +11,12 @@
 #   --pointer append a short marked block to FILE (e.g. AGENTS.md or CLAUDE.md), once
 #   --ci      github: add .github/workflows/verification.yml if missing
 #   --force   replace a differing skill folder or .verification/verify.sh
+#   --check   validate arguments and prerequisites, write nothing
 set -euo pipefail
 
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 NAME=portable-verification
-target=.; agents=""; pointer=""; ci=""; force=0
+target=.; agents=""; pointer=""; ci=""; force=0; check=0
 
 die() { echo "plant: $*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
@@ -25,7 +26,8 @@ while [ $# -gt 0 ]; do
     --pointer) [ $# -ge 2 ] || die "--pointer needs a value"; pointer=$2; shift 2 ;;
     --ci) [ $# -ge 2 ] || die "--ci needs a value"; ci=$2; shift 2 ;;
     --force) force=1; shift ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    --check) check=1; shift ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
 done
@@ -33,6 +35,7 @@ done
 [ -d "$target" ] || die "target directory not found: $target"
 target=$(cd "$target" && pwd)
 [ "$target" != "$SRC" ] || die "target is the skill source folder; pass --target <project>"
+[ -w "$target" ] || die "target directory is not writable: $target"
 [ -f "$SRC/SKILL.md" ] && [ -f "$SRC/scripts/verify.sh" ] || die "incomplete skill folder: $SRC"
 git -C "$target" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
   || echo "plant: warning: $target is not a git repo; verify.sh will report NEEDS_REVIEW (change set unknown)"
@@ -55,6 +58,12 @@ for a in $agents; do
   case " $skill_dirs " in *" $d "*) ;; *) skill_dirs="$skill_dirs $d" ;; esac
 done
 [ "$(echo $skill_dirs | wc -w)" -gt 1 ] && echo "plant: note: a tool that reads several of these folders may list the skill twice"
+case "$ci" in ""|github) ;; *) die "unknown --ci value: $ci (supported: github)" ;; esac
+if [ -n "$pointer" ]; then
+  pf="$target/$pointer"
+  { [ -e "$pf" ] && [ -w "$pf" ]; } || { [ ! -e "$pf" ] && [ -w "$(dirname "$pf")" ]; } || die "pointer file is not writable: $pointer"
+fi
+if [ "$check" = 1 ]; then echo "plant: check ok ($NAME, target $target)"; exit 0; fi
 
 # copy_tree SRC DEST: create, keep if identical, replace only with --force
 copy_tree() {

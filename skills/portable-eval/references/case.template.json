@@ -1,0 +1,16 @@
+{
+  "id": "SC1-0001",
+  "spec_id": "REPLACE-spec-id",
+  "type": "regression",
+  "criteria": ["SC1"],
+  "severity": "normal",
+  "pair_id": null,
+  "risk_family": "REPLACE-family",
+  "source": {"kind": "incident", "ref": "REPLACE: link to the incident or trace"},
+  "input": {"query": "REPLACE: what the adapter is asked to do"},
+  "expected": {"kind": "state", "state": {}},
+  "known_bad_ref": "refs/SC1-0001-bad.json",
+  "known_bad_sha256": "REPLACE with: shasum -a 256 .eval/refs/SC1-0001-bad.json",
+  "split": "regression",
+  "added_at": "REPLACE-YYYY-MM-DD"
+}

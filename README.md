@@ -2,45 +2,53 @@
 
 [한국어](README.ko.md)
 
-An agent skill plus a small shell runner. You declare the checks a change must pass in `.verification/checks.txt`; `verify.sh` runs them, stores redacted logs, and prints one status. The agent reports that status; it does not decide it.
+Two agent skills with small, dependency-light runners. A script, not the agent, decides the status.
 
-**What it guarantees:** declared checks are executed the same way every time, their output is stored, and the status comes from a script instead of the agent's own summary.
+| Skill | Question it answers | Runner | Maturity |
+|---|---|---|---|
+| `portable-verification` | Does this change work? | `verify.sh` (bash + perl) runs the checks declared in `.verification/checks.txt` | Tested; released as v0.1.0 |
+| `portable-eval` | Does this agent system meet its success criteria? | `pe.py` (Python 3.9+, standard library only) runs the regression and safety gates declared in `.eval/` | **Experimental (0.x).** An initial implementation of the small-team subset of the Portable-Eval v2.1 design |
 
-**What it does not guarantee:** it is not tamper-proof. An agent (or person) that can edit `checks.txt`, `verify.sh` or environment variables can change the outcome. The script only raises `NEEDS_REVIEW` when it notices such edits. Real enforcement comes from CI with a required status check and a human who reads the flagged diff.
+The skills are separate on purpose: different readers (every change vs. prompt/model/tool changes), different trust needs, different maturity. They meet in one place: an eval gate is one line in `checks.txt`.
+
+**What they guarantee:** declared checks run the same way every time, their output is stored, and the status comes from a script, not from the agent's own summary.
+
+**What they do not guarantee:** they are not tamper-proof. An agent (or person) who can edit `checks.txt`, `verify.sh`, the evaluation assets or environment variables can change the outcome. The scripts raise `NEEDS_REVIEW` when they notice such edits. Real enforcement comes from CI with a required status check and a human who reads the flagged diff.
 
 ## Install
 
-Needs `bash`, `git`, `perl`. The installer also needs `curl`, `tar`, `gzip`, and `shasum` or `sha256sum`.
+Needs `bash`, `git`, `perl`; `portable-eval` also needs `python3` 3.9 or newer. The installer also needs `curl`, `tar`, `gzip`, and `shasum` or `sha256sum`.
 
 ### A. Clone, then plant
 
 ```bash
 git clone https://github.com/Sooparkle/portable-verification.git
-cd portable-verification && git checkout v0.1.0
+cd portable-verification && git checkout v0.2.0
 bash skills/portable-verification/scripts/plant.sh --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci github
+bash skills/portable-eval/scripts/plant.sh --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci github
 ```
 
-`git checkout v0.1.0` leaves you on a detached HEAD. That is expected.
+`git checkout v0.2.0` leaves you on a detached HEAD. That is expected. Plant only the skill(s) you want.
 
-### B. One-line installer (checks a pinned sha256)
+### B. Installer (checks pinned sha256 values)
 
-Download, read, then run (recommended):
+Download, read, then run (recommended). `--skill` is `verification` (default), `eval` or `both`:
 
 ```bash
-curl -fsSLo install.sh https://raw.githubusercontent.com/Sooparkle/portable-verification/v0.1.0/install.sh
+curl -fsSLo install.sh https://raw.githubusercontent.com/Sooparkle/portable-verification/v0.2.0/install.sh
 less install.sh
-bash install.sh --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci github
+bash install.sh --skill both --target ~/work/my-app --agent claude --pointer CLAUDE.md --ci github
 ```
 
 Or pipe it, which runs code you have not read:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Sooparkle/portable-verification/v0.1.0/install.sh | bash -s -- --target ~/work/my-app --agent claude
+curl -fsSL https://raw.githubusercontent.com/Sooparkle/portable-verification/v0.2.0/install.sh | bash -s -- --skill both --target ~/work/my-app --agent claude
 ```
 
-The installer downloads the release archive of its own version and compares its sha256 with the value written inside `install.sh`. If the download fails or the hash differs, it stops before touching your project. This protects against a corrupted or swapped release asset. It does not protect you if the repository itself is compromised and `install.sh` and the hash are replaced together; reading `install.sh` first is the mitigation.
+The installer downloads the release archive of each selected skill and compares its sha256 with the value written inside `install.sh`. It runs `plant.sh --check` for every selected skill, and only then writes to your project. If a download fails, a hash differs or a pre-flight check fails, it stops with your project untouched (also when `both` is selected: nothing is installed). The pinned hash protects against a corrupted or swapped release asset. It does not protect you if the repository itself is compromised and `install.sh` and the hashes are replaced together; reading `install.sh` first is the mitigation. The install is not transactional: an I/O error while writing (disk full) can leave a partial install; `plant.sh` is idempotent, so run it again.
 
-## Planting it in a project
+## Planting portable-verification in a project
 
 1. **Run A or B** from above. Pick the folder your agent reads (table below). With no `--agent`, plant.sh guesses from `.claude/`, `.cursor/`, `.agents/` or `AGENTS.md`, and falls back to `.agents/skills/`.
 2. **What appears in the project:**
@@ -81,6 +89,44 @@ bash .verification/verify.sh
 
 **Remove:** delete the skill folder, `.verification/`, the `.verification/evidence/` line in `.gitignore`, and the block between `portable-verification:start` and `portable-verification:end` in the pointer file.
 
+## portable-eval (experimental)
+
+An initial implementation of the "small team" subset (section 8) of the design in `skills/portable-eval/docs/design-v2.1.md`. What the tool promises is fixed in `skills/portable-eval/docs/contracts.md`; the tests assert it. It is **not** a validated evaluation platform: its numbers follow the design document's formulas, and the design's own initial values are unvalidated.
+
+What is implemented: spec/case/manifest validation, a regression gate (3 trials, 3 more on a failure, blocked at 2 failures in 6), a safety gate (any failed critical criterion is a FAIL), grader self-tests against pinned known-bad evidence, policy-evidence checks, a comparability check for run manifests, a sample-size calculator. What is not: case promotion/demotion over time, blind-set operation, rubrics, LLM judges, non-inferiority/superiority/equivalence tests, portability checks.
+
+Planting it creates `.eval/` with `pe.py`, `schemas/`, and a `spec.json` / `system-manifest.json` full of `REPLACE` placeholders. The gate refuses to run (BLOCKED) until a human fills them in. You write the graders, cases and the adapter (the adapter is part of the system under test, not an evaluation asset).
+
+```text
+my-app/
+├── .claude/skills/portable-eval/   # the skill, with docs/contracts.md and docs/design-v2.1.md
+├── .eval/
+│   ├── spec.json               # criteria, graders, risk tiers, decision block: YOU fill this
+│   ├── system-manifest.json    # model, harness, prompt hash, tools, budget: YOU fill this (claims)
+│   ├── cases/  graders/  refs/ # YOUR cases, graders and pinned known-bad evidence
+│   ├── schemas/  pe.py         # the tool and its schemas (copies)
+│   └── runs/                   # trial records, evidence, manifests; git-ignored
+└── .github/workflows/eval.yml  # only with --ci github: the trusted gate
+```
+
+```bash
+python3 -I .eval/pe.py validate --eval-dir .eval
+python3 -I .eval/pe.py gate regression --eval-dir .eval --adapter-cmd '["python3","-I","adapters/run.py"]'
+python3 -I .eval/pe.py gate all --eval-dir .eval --adapter-cmd '["python3","-I","adapters/run.py"]' --trusted-ref origin/main
+```
+
+**Two modes, and why.** A local run uses the working tree's `.eval/` and prints `MODE: local (unofficial)`: it is feedback, not a verdict, because whoever changes the code under test can also change the graders. A trusted run (`--trusted-ref`) grades with a copy extracted from a protected ref, refuses to run if the running `pe.py` differs from that ref's `pe.py`, and compares the working tree's evaluation assets with the ref's: a difference can only end as `NEEDS_REVIEW`, never `PASS`. A trusted PASS needs seven invariants (listed in `result.json`). Precedence: BLOCKED > FAIL > NEEDS_REVIEW > PASS.
+
+Wire it into verification with one line in `checks.txt` (local feedback), and run the trusted gate in CI:
+
+```text
+eval-regression  yes  python3 -I .eval/pe.py gate regression --eval-dir .eval --adapter-cmd '["python3","-I","adapters/run.py"]'
+```
+
+`verify.sh` reports `NEEDS_REVIEW` when anything under `.eval/` (spec, cases, graders, schemas, refs, snapshots, `pe.py`) changed. The official gate belongs in `references/ci-eval-trusted.yml`; it runs `pe.py` and the assets from the pull request's base commit. That workflow can itself be edited by a pull request, so protect `.github/` and `.eval/` with CODEOWNERS plus required code-owner review (`references/CODEOWNERS.example`) and make the job a required check. Those are repository settings; the tool cannot enforce them.
+
+A passing safety gate is not a safety claim. The gate prints the number of risk families and says `SAFETY_CLAIM: not demonstrated` until there are enough independent families (59 for a 5% bound, assuming independence).
+
 ## Which `--agent` value
 
 | Tool | `--agent` | Skill folder | Official docs checked | Skill loading tested in the tool |
@@ -98,9 +144,11 @@ bash .verification/verify.sh
 |---|---|---|
 | 0 | PASS | All required checks passed and no flagged test/config file changed (or a human set `TESTS_REVIEWED=1`) |
 | 1 | FAIL | A required check failed or timed out. `TESTS_REVIEWED=1` never changes this |
-| 2 | NEEDS_REVIEW | Checks passed, but test files, test config or `.verification/checks.txt` / `verify.sh` changed, or the change set could not be determined |
+| 2 | NEEDS_REVIEW | Checks passed, but test files, test config, `.verification/checks.txt` / `verify.sh` or `.eval/` assets changed, or the change set could not be determined |
 | 3 | BLOCKED | Missing or invalid checks file, no required check, or a missing prerequisite |
 | 4 | NOT RUN | No check declared, or the run was interrupted |
+
+`pe.py` uses the same exit codes: 1 means the system under test failed, 3 means the tool could not judge (invalid assets, grader error, self-test failure, missing policy evidence, unrunnable trials), 4 means no case was selected.
 
 ## Limits
 
@@ -110,25 +158,27 @@ bash .verification/verify.sh
 - Secret redaction covers environment variable values (names containing TOKEN, SECRET, KEY, PASSWORD, PASSWD, CREDENTIAL, COOKIE; 6+ characters), Authorization/Cookie headers and Bearer tokens. It cannot see secrets hardcoded in files, secrets not in the environment, or screenshots.
 - `CHECK_TIMEOUT` needs `timeout` or `gtimeout`. macOS has neither by default (install coreutils); without one the run is `BLOCKED`.
 - Tier B (drive the real app) and Tier C (independent review) in `SKILL.md` are instructions. The script only enforces what is declared in `checks.txt`.
+- portable-eval: environment isolation and policy observers are claims made by the adapter; the tool only checks what is claimed. Local results are unofficial. Official results depend on repository settings the tool cannot enforce. Gate probabilities assume independent cases and a constant per-trial reliability; a shared outage breaks that assumption.
 - No measurement shows this combination works better than any single one of its sources.
 - Windows is untested (use WSL or Git Bash at your own risk).
 
 ## What was verified here
 
-Run `BASH_BIN=/bin/bash bash tests/run.sh` yourself; it prints the bash version and the counts.
+Run `BASH_BIN=/bin/bash PYTHON_BIN=python3 bash tests/run.sh` yourself; it prints the bash and Python versions and the counts.
 
 | Item | Status |
 |---|---|
-| Scenario tests on macOS, system bash 3.2.57 (locally and GitHub Actions `macos-latest`) | run: 165 ok, 0 not ok |
-| Scenario tests on Ubuntu, bash 5.2.21 (GitHub Actions `ubuntu-latest`) | run: 166 ok, 0 not ok (one extra check uses the real `timeout`) |
-| Real `timeout` binary | run on Ubuntu only; on macOS a stand-in that exits 124 is used |
-| shellcheck 0.9.0, warnings and above (GitHub Actions) | run: clean |
-| Install of v0.1.0 from the public release URL into a scratch project, then `verify.sh` NEEDS_REVIEW, commit, PASS | run once, on macOS |
+| bash scenario tests, python unit tests, adversarial matrix A1-A14 on macOS (bash 3.2.57, system Python 3.9.6) | see CHANGELOG for the counts of the release |
+| Same on Ubuntu and on newer bash/Python | run by GitHub Actions once the change is pushed; see the CI log |
+| Schema validator cross-check against `jsonschema` | run locally in a throw-away venv and in CI; skipped when the library is absent |
+| Mutation checks (breaking a rule on purpose makes a test fail) | run by hand; the results are in the CHANGELOG |
+| Real `timeout` binary | Ubuntu CI only; on macOS a stand-in that exits 124 is used |
 | `agentskills validate` | not run |
-| The workflow planted into projects (`references/ci-github-actions.yml`) | not run |
-| Loading the skill inside each agent tool | not tested |
+| The workflows planted into projects (`ci-github-actions.yml`, `ci-eval-trusted.yml`) | not run |
+| A real LLM agent behind the adapter, LLM judges, blind sets | not implemented, not run |
+| Loading the skills inside each agent tool | not tested |
 | Windows | not tested |
 
 ## Sources and license
 
-See `skills/portable-verification/SOURCES.md` for the ideas this adapts and how each was checked. That file also states which of its own claims were not audited here. MIT licensed, see `LICENSE`; before redistributing, check the licenses of the sources listed there.
+See `skills/portable-verification/SOURCES.md` for the ideas portable-verification adapts and how each was checked, and `skills/portable-eval/docs/design-v2.1.md` section 10 for portable-eval. SOURCES.md also states which of its own claims were not audited here. MIT licensed, see `LICENSE`; before redistributing, check the licenses of the sources listed there.

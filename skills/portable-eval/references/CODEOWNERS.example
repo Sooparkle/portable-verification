@@ -1,0 +1,5 @@
+# Example only. A CODEOWNERS file does nothing unless branch protection / a ruleset requires
+# review from code owners. Replace @your-org/eval-owners with real owners.
+/.eval/            @your-org/eval-owners
+/.github/          @your-org/eval-owners
+/.verification/    @your-org/eval-owners

@@ -33,7 +33,7 @@ assert_eq "nothing enabled -> NOT RUN" 4 "$CODE"
 
 # ---- install record ----------------------------------------------------
 man=$(cat "$p/.verification/.plant-manifest")
-assert_contains "record has the version" "$man" "plant_version=0.1.0"
+assert_contains "record has the version" "$man" "plant_version=$(tr -d '[:space:]' < "$SKILL/VERSION")"
 assert_contains "record has the hash of verify.sh" "$man" "$(sum256 "$p/.verification/verify.sh")"
 
 # ---- rerun is idempotent and keeps user files --------------------------
@@ -88,6 +88,15 @@ assert_contains "make suggestion" "$c" "#make-test yes make test"
 p=$(new_repo default-agent)
 run_plant --target "$p"
 assert_file "no hint -> .agents/skills" "$p/.agents/skills/portable-verification/SKILL.md"
+
+# ---- --check writes nothing --------------------------------------------
+p=$(new_repo chk)
+before=$(fingerprint "$p")
+run_plant --target "$p" --agent claude --check
+assert_eq "--check succeeds" 0 "$CODE"
+assert_eq "--check writes nothing" "$before" "$(fingerprint "$p")"
+run_plant --target "$p" --check --ci gitlab
+assert_eq "--check rejects an unsupported --ci" 1 "$CODE"
 
 # ---- rejection: nothing may be created --------------------------------
 p=$(new_repo reject)

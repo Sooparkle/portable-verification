@@ -41,9 +41,13 @@ A case can be in both gates. Trials are run once and shared. The decisions come 
 
 No selected case → `NOT RUN` (4).
 
+The case field `severity` is a label. Gate selection uses `type` and the criteria in `risk_tiers.critical`, never `severity`. `validate` and `gate` print a warning for a case labelled `critical` that has no critical criterion, because the safety gate will not select it.
+
 ## 3. Adapter contract
 
 The adapter is a command given as a JSON array (`--adapter-cmd '["python3","run.py"]'`). It is part of the system under test, so it is not an evaluation asset.
+
+Because the adapter runs in a fresh temporary directory, relative paths among its arguments that exist (relative to where `pe.py` was started) are made absolute before it starts. The program name is only changed when it contains a path separator; a bare name such as `python3` is looked up on `PATH` as usual.
 
 - Started without a shell, in a fresh temporary working directory, with a stdin of `/dev/null`.
 - Environment: only `PATH`, `LANG`, `LC_ALL`, `TZ`, `TMPDIR`, plus names listed in `spec.adapter.env_allow`, plus `PE_CASE_FILE` (path to a JSON file holding only `id` and `input`, never `expected` or the known_bad/good paths) and `PE_WORKDIR`. Secrets are not passed unless listed.
@@ -76,6 +80,7 @@ For every evaluated criterion with `kind: policy`, the spec lists `required_obse
 ### Self-test (before every run, same limits)
 
 - `known_bad_ref` evidence, graded against the case's criteria, must make **at least one** criterion fail.
+- **Every grader used by the selected cases must fail at least one known_bad evidence** (from any case). Otherwise nothing shows that the grader can tell bad from good: an always-pass grader could hide behind another criterion of the same case. Missing coverage is BLOCKED. This makes a known-bad reference effectively required per grader, even where the design calls it optional per case.
 - If `known_good_ref` exists, all criteria must pass.
 - The referenced files must exist inside the eval dir, match `known_bad_sha256` / `known_good_sha256`, and validate as evidence. Any problem is BLOCKED.
 - Passing the self-test is a necessary condition only. It does not show that the grader catches errors it was not shown.
@@ -111,7 +116,7 @@ Schemas are real JSON Schema 2020-12 files. The built-in validator supports: `ty
 | A3 | required observer `inactive` / `unknown` | any | **BLOCKED (3)** |
 | A4 | manifest required field empty, or `null` on both sides | compare | **BLOCKED (3)** |
 | A5 | known_bad evidence replaced (hash mismatch) | any | **BLOCKED (3)** |
-| A6 | always-pass grader (passes known_bad) | any | **BLOCKED (3)** |
+| A6 | always-pass grader (passes known_bad), also when hidden behind a second criterion of the same case | any | **BLOCKED (3)** |
 | A7 | grader crashes / hangs / lies outside `graders/` / escapes by symlink | any | **BLOCKED (3)** |
 | A8 | evidence violates schema, is oversize, or carries an `_executor` field | any | **BLOCKED (3)** after re-runs |
 | A9 | `decision` changed after the result | compare | **BLOCKED (3)** |
@@ -128,5 +133,6 @@ Schemas are real JSON Schema 2020-12 files. The built-in validator supports: `ty
 - A regression-gate case that stays unrunnable after re-runs is BLOCKED (the design only says this for the safety gate).
 - The safety gate's critical-criterion target set and the shared-trial rule are made explicit.
 - The statistical bound is reported per risk family and never as a safety claim from the case count.
+- Every grader used must fail at least one known-bad evidence (grader-level self-test coverage). The design only asks for a per-case self-test and makes known-bad references optional for capability and safety cases.
 - `decision` is checked as immutable by `compare` (design 2 says a later change voids the comparison).
 - Not implemented: sections 3.1 state transitions, 3.3 blind operation, 3.4 rubrics, 6.3 judges, 7.2 non-inferiority/superiority/equivalence/cost, 7.4 portability checks.

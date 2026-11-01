@@ -1,0 +1,17 @@
+{
+  "comparison_purpose": "system",
+  "system": {
+    "model_id": "REPLACE",
+    "harness_name": "REPLACE",
+    "harness_version": "REPLACE",
+    "prompt_sha256": "REPLACE-with-64-hex-chars",
+    "tools": ["REPLACE"],
+    "temperature": 0.0
+  },
+  "env": {
+    "image_sha256": "REPLACE",
+    "network_scope": "REPLACE",
+    "data_scope": "REPLACE"
+  },
+  "budget": {"time_limit_s": 600, "max_calls": 100, "max_cost": 5.0}
+}

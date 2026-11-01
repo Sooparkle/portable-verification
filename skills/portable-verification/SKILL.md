@@ -67,7 +67,7 @@ Ask a reviewer that did not write the code: "Does this diff implement the origin
 |---|---|---|
 | 0 | PASS | All required checks passed; no flagged test/config file changed (or a human set TESTS_REVIEWED=1) |
 | 1 | FAIL | A required check failed or timed out |
-| 2 | NEEDS_REVIEW | Checks passed, but test files, test config, or `.verification/` checks changed, or the change set could not be determined |
+| 2 | NEEDS_REVIEW | Checks passed, but test files, test config, `.verification/` checks, or evaluation assets under `.eval/` (portable-eval) changed, or the change set could not be determined |
 | 3 | BLOCKED | Missing or invalid checks file, no required check, or a runner prerequisite missing |
 | 4 | NOT RUN | No check declared, or the run was interrupted |
 

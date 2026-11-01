@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.2.0 (unreleased)
+
+### Added: portable-eval (experimental)
+A second skill, `skills/portable-eval/`: an initial implementation of the small-team subset (section 8) of the
+Portable-Eval v2.1 design. The design text is saved unchanged in `docs/design-v2.1.md` with an implementation-status
+table on top; what the tool promises is fixed in `docs/contracts.md`.
+- `scripts/pe.py` (Python 3.9+, standard library only): `validate`, `gate regression|safety|all`, `compare`, `plan`.
+- Four JSON schemas and a JSON Schema subset validator that **blocks on any unsupported keyword**.
+- Two modes: `local` (prints `MODE: local (unofficial)`) and `trusted` (`--trusted-ref`: graded with a copy extracted
+  from the ref, refuses if the running `pe.py` differs from the ref's, compares the working tree's assets with the
+  ref's; seven invariants must hold for a trusted PASS).
+- Adapter and grader contracts: no shell, process group kill, time limits, environment allow-list, output size cap,
+  grader path confined to `graders/`, self-test against hash-pinned known-bad (and optional known-good) evidence.
+- `trials.jsonl` (append-only) is written for every attempt so a later tool can implement design 3.1.
+- `plant.sh` for the skill, `references/` templates (placeholders make the gate BLOCKED until filled in), a trusted CI
+  workflow template and a CODEOWNERS example.
+
+### Changed
+- `verify.sh`: changes under `.eval/` (spec, cases, graders, schemas, refs, snapshots, `pe.py`) now give NEEDS_REVIEW.
+  `.eval/runs/` and `system-manifest.json` are not flagged.
+- `plant.sh` (both skills): `--check` validates arguments and prerequisites and writes nothing; the target must be writable.
+- `install.sh`: `--skill verification|eval|both`, one pinned sha256 per skill, `--archive-dir`, pre-flight
+  `plant.sh --check` for every selected skill before the first write. The single `ARCHIVE_SHA256` pin of 0.1.0 is gone.
+- `build/build-release.sh` builds one archive per skill; new `build/check-release.sh` verifies the release chain
+  (tag commit, CI on that exact commit, pinned hashes, asset hashes, optional rebuild).
+- CI: Ubuntu and macOS with Python 3.9 and 3.13, `jsonschema` installed for the schema cross-check.
+
+### Differences from design v2.1 (decisions the design left open)
+- JSON instead of YAML; `known_good_ref`, `known_bad_sha256`, `known_good_sha256`, spec `graders` / `adapter` /
+  `required_observers`, `decision.safety_trials` (default 3) and evidence `policy_coverage` were added.
+- A regression-gate case that stays unrunnable after re-runs is BLOCKED (the design states it only for the safety gate).
+- Safety gate target set: `type == safety` cases plus any case with a critical criterion; only critical criteria are
+  evaluated; trials are shared with the regression gate; one failed critical criterion in any trial is a FAIL.
+- The safety upper bound is computed from the number of risk families, never from the number of cases.
+- Regression gate stops early once 2 of the first 3 trials failed (the extra 3 could not change the outcome).
+- `compare` also refuses when `decision.fixed_at` is later than a run, or the decision block differs.
+- Grader-level self-test coverage: every grader used must fail at least one known-bad evidence (the design asks only
+  for a per-case self-test). Without it an always-pass grader could hide behind a second criterion of the same case.
+- Not implemented: 3.1 state transitions, 3.3 blind-set operation, 3.4 rubrics, 6.3 judges, 7.2 non-inferiority /
+  superiority / equivalence / cost tests, 7.4 portability checks.
+
+### Verified (macOS, Darwin 25.5.0 arm64, before the first commit of this release)
+- `BASH_BIN=/bin/bash PYTHON_BIN=/usr/bin/python3 bash tests/run.sh`: bash 3.2.57, Python 3.9.6: **330 ok, 0 not ok**
+  (consistency 16, eval 71 (1 skipped: the jsonschema cross-check), install 89, plant-eval 39, plant 59, verify 56).
+- Same eval tests with Python 3.13.1 and `jsonschema` 4.26.0 installed: **72 ok**; the validator agrees with
+  `jsonschema` on every generated mutant (missing/null/wrong-typed/extra fields, enum, conditional and oneOf cases).
+- shellcheck 0.11.0 (`--severity=warning`) on all shell scripts: no findings.
+- Mutation checks by hand: 12 deliberate defects in `pe.py` / `verify.sh` (safety gate never failing, self-test skipped,
+  hash pin ignored, trusted asset comparison ignored, regression threshold, pe.py-vs-ref check, policy coverage ignored,
+  `oneOf` leniency, decision-after-the-fact check, null/empty manifest fields tolerated, `.eval/` flag removed, unrunnable
+  counted as pass) were each caught by at least one test. 3 defects in `install.sh` (hash comparison off, pre-flight
+  `--check` skipped, wrong pin used) were caught too; the first version of the tests did **not** catch the skipped
+  pre-flight check, so the no-git test (eval pre-flight fails, verification must not be written) was added.
+- `build/check-release.sh v0.1.0 --rebuild` against the real release: CI green on the tagged commit, asset hash equals
+  the pin, rebuilt bytes identical (same machine).
+- Python 3.9 syntax of `pe.py` is enforced by a test (`ast.parse(feature_version=(3, 9))`).
+
+### Not run / known gaps
+- The workflows of this repository and the planted workflows (`ci-github-actions.yml`, `ci-eval-trusted.yml`) have not run on GitHub.
+- Real LLM agent adapters, LLM judges, blind sets, accumulated case state, YAML input, Windows, `agentskills validate`,
+  loading the skills inside each agent tool.
+- CODEOWNERS, required reviews and required checks are repository settings; nothing here enforces or tests them.
+- Official (trusted) results are only as good as the CI that runs a `pe.py` from the base branch; a pull request can edit the workflow file.
+- The golden tests prove the formulas equal the design document, not that the design's initial values are right.
+
 ## 0.1.0 (2026-11-01)
 
 ### Baseline

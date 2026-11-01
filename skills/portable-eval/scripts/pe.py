@@ -479,6 +479,17 @@ def load_assets(eval_dir):
     return a
 
 
+def lint_assets(assets):
+    """Warnings for configurations that are valid but probably not what the author meant."""
+    out = []
+    for cid in sorted(assets.cases):
+        c = assets.cases[cid]
+        if c["severity"] == "critical" and not (set(c["criteria"]) & assets.critical) and c["type"] != "safety":
+            out.append("case %s has severity 'critical' but none of its criteria is in risk_tiers.critical; "
+                       "the safety gate selects by criteria, so it will not select this case" % cid)
+    return out
+
+
 # --------------------------------------------------------------------------
 # process execution (no shell, process group, time limit)
 # --------------------------------------------------------------------------
@@ -612,7 +623,14 @@ def load_reference_evidence(assets, case, key, tmp):
 
 
 def selftest(assets, cases, hashes):
+    """Per case: known_bad must fail at least one criterion, known_good must pass all.
+    Per grader: every grader the cases use must fail at least one known_bad evidence; otherwise
+    nothing shows that it can tell bad from good (an always-pass grader could hide behind another criterion)."""
+    used = set()
+    discriminates = set()
     for case in cases:
+        for cid in case["criteria"]:
+            used.add(assets.criteria[cid]["grader_id"])
         for key, want in (("known_bad", "fail"), ("known_good", "pass")):
             if key + "_ref" not in case:
                 continue
@@ -623,8 +641,14 @@ def selftest(assets, cases, hashes):
                 res = grade_criteria(assets, case, case["criteria"], copy, tmp, hashes)
                 if want == "fail" and "fail" not in res.values():
                     raise Blocked("self-test failed: grader passed the known_bad evidence of %s" % case["id"])
+                if want == "fail":
+                    discriminates.update(assets.criteria[c]["grader_id"] for c, v in res.items() if v == "fail")
                 if want == "pass" and "fail" in res.values():
                     raise Blocked("self-test failed: grader failed the known_good evidence of %s" % case["id"])
+    missing = sorted(used - discriminates)
+    if missing:
+        raise Blocked("self-test failed: no known_bad evidence makes grader(s) %s fail, so nothing shows they "
+                      "discriminate; add a case whose known_bad fails them" % ", ".join(missing))
 
 
 # --------------------------------------------------------------------------
@@ -659,6 +683,25 @@ def decide_safety(slots, critical_ids):
             if r == "fail":
                 failed = True
     return "fail" if failed else "pass"
+
+
+def schedule_regression(run_slot_fn, slots):
+    """Append the slots the regression rule asks for. run_slot_fn(phase, index) -> slot dict.
+    3 trials; if exactly one of them did not pass, 3 more. 2 or more bad ones in the first 3 end it
+    early (the extra trials could not change the outcome); an unrunnable slot ends it too."""
+    for _ in range(3):
+        slots.append(run_slot_fn("initial", len(slots) + 1))
+    bad = sum(1 for s in slots if s["outcome"] != "pass")
+    unrunnable = any(s["outcome"] == "unrunnable" for s in slots)
+    if bad == 1 and not unrunnable:
+        for _ in range(3):
+            slots.append(run_slot_fn("extra", len(slots) + 1))
+
+
+def schedule_safety(run_slot_fn, slots, want):
+    """Top the slots up to `want` trials (slots may already hold the regression gate's trials)."""
+    while len(slots) < want and not any(s["outcome"] == "unrunnable" for s in slots):
+        slots.append(run_slot_fn("safety", len(slots) + 1))
 
 
 # --------------------------------------------------------------------------
@@ -837,6 +880,21 @@ def final_line(status, detail, run_dir):
     return EXIT[status]
 
 
+def absolutize_adapter(argv, start):
+    """The adapter runs in a fresh temporary directory, so a relative script path would not be found there.
+    Existing relative paths among the arguments are made absolute against the directory pe.py was started in.
+    The first element (the program) is only changed when it contains a path separator; bare names keep
+    using PATH."""
+    out = []
+    for i, a in enumerate(argv):
+        if os.path.isabs(a) or a.startswith("-") or (i == 0 and os.sep not in a):
+            out.append(a)
+            continue
+        p = os.path.join(start, a)
+        out.append(p if os.path.exists(p) else a)
+    return out
+
+
 def cmd_gate(args):
     started = now_iso()
     trusted = args.trusted_ref is not None
@@ -853,6 +911,7 @@ def cmd_gate(args):
                 raise ValueError
         except ValueError:
             raise Blocked("--adapter-cmd must be a non-empty JSON array of strings")
+        adapter_argv = absolutize_adapter(adapter_argv, os.getcwd())
         eval_dir_arg = os.path.abspath(args.eval_dir)
         review = []
         trusted_sha = None
@@ -932,20 +991,12 @@ def cmd_gate(args):
                 crit = [x for x in case["criteria"] if x in assets.critical]
             lst = []
             slots[cid] = lst
+            def runner(phase, index, case=case, crit=crit):
+                return run_slot(run, case, crit, phase, index)
             if cid in reg_ids:
-                for i in range(3):
-                    lst.append(run_slot(run, case, crit, "initial", len(lst) + 1))
-                bad = sum(1 for s in lst if s["outcome"] != "pass")
-                unrunnable = any(s["outcome"] == "unrunnable" for s in lst)
-                if bad == 1 and not unrunnable:
-                    for i in range(3):
-                        lst.append(run_slot(run, case, crit, "extra", len(lst) + 1))
-                elif unrunnable:
-                    pass
+                schedule_regression(runner, lst)
             if cid in saf_ids:
-                want = decision["safety_trials"]
-                while len(lst) < want and not any(s["outcome"] == "unrunnable" for s in lst):
-                    lst.append(run_slot(run, case, crit, "safety", len(lst) + 1))
+                schedule_safety(runner, lst, decision["safety_trials"])
             trials_per_case[cid] = len(lst)
 
         reg_dec = {cid: decide_regression(slots[cid]) for cid in sorted(reg_ids)}
@@ -1029,6 +1080,9 @@ def finish(run, forced_status, forced_detail, mode, mode_label, trusted_sha, ass
         except Blocked:
             pass
     print("MODE: %s" % mode_label)
+    if assets is not None:
+        for w in lint_assets(assets):
+            print("warning: " + w)
     for ln in lines:
         print(ln)
     return final_line(status, detail, run.out_dir)
@@ -1054,6 +1108,8 @@ def cmd_validate(args):
             if not os.path.isfile(p):
                 raise Blocked("grader file missing: %s" % gid)
             hashes[gid] = sha256_file(p)
+        for w in lint_assets(assets):
+            print("warning: " + w)
         print("validate: spec ok, %d criteria, %d cases, %d graders" % (len(assets.criteria), len(assets.cases), len(hashes)))
         print("STATUS: PASS (valid)")
         return 0

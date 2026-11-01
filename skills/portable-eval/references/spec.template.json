@@ -1,0 +1,28 @@
+{
+  "spec_id": "REPLACE-spec-id",
+  "spec_version": "1",
+  "purpose": "REPLACE: what this evaluation is for",
+  "population": {
+    "segments": ["REPLACE segment"],
+    "intents": {"REPLACE intent": 1.0}
+  },
+  "success_criteria": [
+    {"id": "SC1", "description": "REPLACE: outcome criterion", "kind": "outcome", "grader_id": "outcome_check", "evidence_required": true},
+    {"id": "PC1", "description": "REPLACE: policy criterion", "kind": "policy", "grader_id": "policy_check", "evidence_required": true, "required_observers": ["egress"]}
+  ],
+  "graders": {
+    "outcome_check": {"path": "graders/outcome_check.py", "interpreter": "python"},
+    "policy_check": {"path": "graders/policy_check.py", "interpreter": "python"}
+  },
+  "risk_tiers": {"critical": ["PC1"], "normal": ["SC1"]},
+  "reference": {"as_of": "REPLACE-YYYY-MM-DD", "snapshot_id": "REPLACE-snapshot-id"},
+  "adapter": {"env_allow": [], "timeout_s": 300},
+  "decision": {
+    "alpha_one_sided": 0.025,
+    "power": 0.8,
+    "margins": {"non_inferiority": 0.05, "equivalence": 0.03, "cost_improvement": 0.2},
+    "owner": "REPLACE: who decides",
+    "fixed_at": "REPLACE-YYYY-MM-DD",
+    "safety_trials": 3
+  }
+}

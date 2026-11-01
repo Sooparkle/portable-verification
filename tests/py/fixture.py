@@ -70,6 +70,11 @@ elif c == "E": ev(_executor={"trial": 1})
 elif c == "B": print(json.dumps({"termination_reason": "completed", "env_fingerprint": "fp", "pad": "x" * (6 * 1024 * 1024)}))
 elif c == "L": ev(final_state={"ok": True, "leak": os.environ.get("SECRET_TOKEN", "")})
 elif c == "H": ev(final_state={"ok": True, "saw_expected": "expected" in open(os.environ["PE_CASE_FILE"]).read()})
+elif c == "O":
+    import subprocess
+    child = subprocess.Popen(["sleep", "60"])
+    open(os.path.join(state, "orphan.pids"), "a").write(str(child.pid) + "\n")
+    ev()
 '''
 
 SYSTEM_MANIFEST = {
@@ -107,6 +112,11 @@ def good_evidence(**state):
 
 def read_bytes(path):
     with open(path, "rb") as fh:
+        return fh.read()
+
+
+def read_text(path):
+    with open(path) as fh:
         return fh.read()
 
 
