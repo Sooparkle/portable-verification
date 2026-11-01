@@ -41,21 +41,20 @@ table on top; what the tool promises is fixed in `docs/contracts.md`.
 - Not implemented: 3.1 state transitions, 3.3 blind-set operation, 3.4 rubrics, 6.3 judges, 7.2 non-inferiority /
   superiority / equivalence / cost tests, 7.4 portability checks.
 
-### Verified (macOS, Darwin 25.5.0 arm64, before the first commit of this release)
-- `BASH_BIN=/bin/bash PYTHON_BIN=/usr/bin/python3 bash tests/run.sh`: bash 3.2.57, Python 3.9.6: **330 ok, 0 not ok**
-  (consistency 16, eval 71 (1 skipped: the jsonschema cross-check), install 89, plant-eval 39, plant 59, verify 56).
-- Same eval tests with Python 3.13.1 and `jsonschema` 4.26.0 installed: **72 ok**; the validator agrees with
-  `jsonschema` on every generated mutant (missing/null/wrong-typed/extra fields, enum, conditional and oneOf cases).
-- shellcheck 0.11.0 (`--severity=warning`) on all shell scripts: no findings.
-- Mutation checks by hand: 12 deliberate defects in `pe.py` / `verify.sh` (safety gate never failing, self-test skipped,
-  hash pin ignored, trusted asset comparison ignored, regression threshold, pe.py-vs-ref check, policy coverage ignored,
-  `oneOf` leniency, decision-after-the-fact check, null/empty manifest fields tolerated, `.eval/` flag removed, unrunnable
-  counted as pass) were each caught by at least one test. 3 defects in `install.sh` (hash comparison off, pre-flight
-  `--check` skipped, wrong pin used) were caught too; the first version of the tests did **not** catch the skipped
-  pre-flight check, so the no-git test (eval pre-flight fails, verification must not be written) was added.
-- `build/check-release.sh v0.1.0 --rebuild` against the real release: CI green on the tagged commit, asset hash equals
-  the pin, rebuilt bytes identical (same machine).
-- Python 3.9 syntax of `pe.py` is enforced by a test (`ast.parse(feature_version=(3, 9))`).
+### Verified (macOS, Darwin 25.5.0 arm64, bash 3.2.57; details in reports/test-report-v0.2.0.md)
+- Full suite five times, 0 failures: Python 3.9.6 + jsonschema 4.25.1 **345 ok** (three runs), Python 3.13.1 +
+  jsonschema 4.26.0 **345 ok**, Python 3.9.6 without jsonschema **344 ok** (the cross-check is skipped there).
+  Per scenario: consistency 16, eval 86, install 89, plant-eval 39, plant 59, verify 56.
+- The schema validator agrees with `jsonschema` on every generated mutant of the four schemas.
+- Mutation checks re-run on the final code: 19 of 19 deliberate defects caught (15 in pe.py, 1 in verify.sh, 3 in
+  install.sh). The first version of the install tests did **not** catch a skipped pre-flight check; a test was added.
+- Seeded simulation through the real scheduling and decision functions matches the design's gate probabilities
+  (2,000,000 samples per false-block condition, |z| <= 1.01).
+- End-to-end walk-through (`reports/e2e-walkthrough.sh`): 8 of 8 expected outcomes.
+- shellcheck 0.11.0 (`--severity=warning`): no findings. `build/check-release.sh v0.1.0 --rebuild`: OK.
+- Defects found by this testing and fixed: relative adapter paths did not work; a `severity: critical` label alone
+  silently kept a case out of the safety gate (now a warning); an always-pass grader could hide behind a second
+  criterion (now grader-level self-test coverage); the install tests could not see a skipped pre-flight check.
 
 ### Not run / known gaps
 - The workflows of this repository and the planted workflows (`ci-github-actions.yml`, `ci-eval-trusted.yml`) have not run on GitHub.
