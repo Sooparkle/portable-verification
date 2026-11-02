@@ -85,11 +85,38 @@ def _reject_constant(name):
     raise ValueError("non-standard JSON number %s" % name)
 
 
+def _finite_float(text):
+    v = float(text)
+    if not math.isfinite(v):     # e.g. 1e999: valid JSON syntax, but it would become inf
+        raise ValueError("number out of range: %s" % text)
+    return v
+
+
 def loads_strict(data):
-    """json.loads that refuses NaN, Infinity and -Infinity (not valid JSON)."""
+    """json.loads that refuses NaN, Infinity and -Infinity (not valid JSON), and numbers that overflow
+    to infinity (1e999), anywhere in the document, also in free-form fields."""
     if isinstance(data, bytes):
         data = data.decode("utf-8")
-    return json.loads(data, parse_constant=_reject_constant)
+    return json.loads(data, parse_constant=_reject_constant, parse_float=_finite_float)
+
+
+def json_bytes(obj):
+    """The exact bytes pe.py writes for a JSON file."""
+    return (json.dumps(obj, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def write_verified(path, data):
+    """Write bytes, read them back, return their sha256. A difference or an I/O error is Blocked."""
+    try:
+        with open(path, "wb") as f:
+            f.write(data)
+        with open(path, "rb") as f:
+            back = f.read()
+    except OSError as e:
+        raise Blocked("cannot write %s: %s" % (path, e))
+    if back != data:
+        raise Blocked("%s changed right after it was written" % os.path.basename(path))
+    return sha256_bytes(data)
 
 
 def read_json(path, what):
@@ -502,9 +529,12 @@ def load_assets(eval_dir):
         gp = grader_path(eval_dir, gid, g)
         if not os.path.isfile(gp):
             raise Blocked("grader file missing: %s" % gid)
+        interp = g.get("interpreter", "python")
+        if interp == "exec" and not os.access(gp, os.X_OK):
+            raise Blocked("grader %s has interpreter 'exec' but is not executable" % gid)
         with open(gp, "rb") as f:
             blob = f.read()
-        a.graders[gid] = (os.path.basename(gp), blob, sha256_bytes(blob), g.get("interpreter", "python"))
+        a.graders[gid] = (os.path.basename(gp), blob, sha256_bytes(blob), interp)
     a.digest, _ = assets_digest(eval_dir)
     return a
 
@@ -772,20 +802,13 @@ class Run:
         """Write trials.jsonl and the evidence files, read them back, return {relative path: sha256}."""
         written = {}
         try:
-            ev_dir = os.path.join(self.out_dir, "evidence")
-            os.makedirs(ev_dir, exist_ok=True)
-            body = "".join(json.dumps(r, sort_keys=True) + "\n" for r in self.records).encode("utf-8")
-            items = [("trials.jsonl", body)] + [("evidence/" + n, b) for n, b in sorted(self.evidence.items())]
-            for rel, data in items:
-                with open(os.path.join(self.out_dir, *rel.split("/")), "wb") as f:
-                    f.write(data)
-                written[rel] = sha256_bytes(data)
-            for rel, want in written.items():
-                with open(os.path.join(self.out_dir, *rel.split("/")), "rb") as f:
-                    if sha256_bytes(f.read()) != want:
-                        raise Blocked("artifact %s changed right after it was written" % rel)
+            os.makedirs(os.path.join(self.out_dir, "evidence"), exist_ok=True)
         except OSError as e:
             raise Blocked("cannot write run artifacts: %s" % e)
+        body = "".join(json.dumps(r, sort_keys=True) + "\n" for r in self.records).encode("utf-8")
+        items = [("trials.jsonl", body)] + [("evidence/" + n, b) for n, b in sorted(self.evidence.items())]
+        for rel, data in items:
+            written[rel] = write_verified(os.path.join(self.out_dir, *rel.split("/")), data)
         return written
 
 
@@ -967,6 +990,8 @@ def cmd_gate(args):
     mode = "trusted" if trusted else "local"
     mode_label = "trusted" if trusted else "local (unofficial)"
     run_dir = None
+    run = None
+    trusted_sha = None
     tmp_assets = None
     invariants = dict.fromkeys(("ref_pinned", "assets_verified", "evidence_schema_verified", "selftest_passed",
                                 "graded_with_ref_copies", "gate_executed", "artifacts_preserved"), False)
@@ -1077,13 +1102,24 @@ def cmd_gate(args):
                       assets=assets)
     except Exception as e:     # fail closed: an unexpected error is BLOCKED, never a traceback with exit 1
         detail = str(e) if isinstance(e, Blocked) else "internal error: %s: %s" % (type(e).__name__, e)
+        result_sha = None
         if run_dir and os.path.isdir(run_dir):
+            result = {"status": "BLOCKED", "detail": detail, "mode": mode, "trusted_ref": trusted_sha,
+                      "invariants": invariants, "tool_version": TOOL_VERSION}
+            # Keep what the finished trials recorded: a run that was stopped because of tampering is
+            # exactly the run whose records someone will want to look at.
+            if run is not None and run.records:
+                try:
+                    result["artifacts_sha256"] = run.write_artifacts()
+                except Blocked as e2:
+                    result["artifacts_error"] = str(e2)
             try:
-                write_json(os.path.join(run_dir, "result.json"), {"status": "BLOCKED", "detail": detail, "mode": mode,
-                                                                    "invariants": invariants, "tool_version": TOOL_VERSION})
+                result_sha = write_verified(os.path.join(run_dir, "result.json"), json_bytes(result))
             except Blocked:
                 pass
         print("MODE: %s" % mode_label)
+        if result_sha:
+            print("RESULT_SHA256: %s" % result_sha)
         return final_line("BLOCKED", detail, run_dir)
     finally:
         if tmp_assets:
@@ -1137,23 +1173,26 @@ def finish(run, forced_status, forced_detail, mode, mode_label, trusted_sha, ass
             merrs = validate(manifest, assets.schemas["manifest"])
             if merrs:
                 raise Blocked("manifest invalid: " + "; ".join(merrs[:4]))
-            write_json(os.path.join(run.out_dir, "manifest.json"), manifest)
-            with open(os.path.join(run.out_dir, "manifest.json"), "rb") as f:
-                artifacts["manifest.json"] = sha256_bytes(f.read())
+            # the hash recorded is the one of the bytes meant to be written, and the file must read back the same
+            artifacts["manifest.json"] = write_verified(os.path.join(run.out_dir, "manifest.json"), json_bytes(manifest))
         invariants["artifacts_preserved"] = True
         result["invariants"] = invariants
         result["artifacts_sha256"] = artifacts
-        write_json(os.path.join(run.out_dir, "result.json"), result)
+        result_sha = write_verified(os.path.join(run.out_dir, "result.json"), json_bytes(result))
     except (Blocked, OSError) as e:
         # BLOCKED > FAIL: without complete artifacts no verdict is reported, whatever it would have been
         invariants["artifacts_preserved"] = False
         status, detail = "BLOCKED", "artifacts not preserved: %s" % e
+        result_sha = None
         try:
             result.update(status=status, detail=detail, invariants=invariants)
-            write_json(os.path.join(run.out_dir, "result.json"), result)
+            result_sha = write_verified(os.path.join(run.out_dir, "result.json"), json_bytes(result))
         except (Blocked, OSError):
             pass
     print("MODE: %s" % mode_label)
+    if result_sha:
+        # result.json cannot hold its own hash; printed here, it lands in the CI log, outside the run directory
+        print("RESULT_SHA256: %s" % result_sha)
     if assets is not None:
         for w in lint_assets(assets):
             print("warning: " + w)

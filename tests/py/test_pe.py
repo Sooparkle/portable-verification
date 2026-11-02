@@ -2,6 +2,7 @@
 import ast
 import copy
 import importlib.util
+import io
 import json
 import os
 import random
@@ -147,6 +148,14 @@ class TestSchemaValidator(unittest.TestCase):
         with self.assertRaises(ValueError):
             pe.loads_strict('{"cost": Infinity}')
 
+    def test_numbers_that_overflow_to_infinity_are_refused_also_in_free_form_fields(self):
+        # 1e999 is valid JSON syntax, but Python would read it as inf; free-form fields have no type to catch it
+        for doc in ('{"final_state": {"overflow": 1e999}}', '{"final_output": -1e999}', '{"a": [1, 2e400]}'):
+            with self.assertRaises(ValueError, msg=doc):
+                pe.loads_strict(doc)
+        self.assertEqual(pe.loads_strict('{"a": 1e300, "b": 10000000000000000000000}'),
+                         {"a": 1e300, "b": 10 ** 22})
+
     def test_semantics(self):
         v = pe.validate
         self.assertEqual(v(1, {"type": "integer"}), [])
@@ -204,6 +213,24 @@ class TestSchemaValidator(unittest.TestCase):
         self.assertEqual(disagreements, [])
 
 
+def run_with_injected_error(test, name, argv):
+    """Run pe.main(argv) in this process with pe.<name> replaced by a function that raises RuntimeError.
+    Returns (exit code, stdout). A traceback out of main fails the test."""
+    import contextlib
+    real = getattr(pe, name)
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("injected")
+    setattr(pe, name, boom)
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            code = pe.main(argv)
+    finally:
+        setattr(pe, name, real)
+    return code, buf.getvalue()
+
+
 def mine_vs_ref(mutants, schema, ref):
     for label, inst in mutants:
         mine = not pe.validate(inst, schema)
@@ -230,9 +257,26 @@ class TestGateLocal(Base):
         self.assertRegex(rec["adapter_sha256"], "^[0-9a-f]{64}$")
         self.assertRegex(rec["grader_sha256"]["SC1"], "^[0-9a-f]{64}$")
         arts = self.p.result(rd)["artifacts_sha256"]
+        self.assertIn("manifest.json", arts)
         for rel, want in arts.items():
             with open(os.path.join(rd, *rel.split("/")), "rb") as fh:
                 self.assertEqual(hashlib.sha256(fh.read()).hexdigest(), want, rel)
+        # result.json cannot hold its own hash; it is printed (and so kept in the CI log)
+        with open(os.path.join(rd, "result.json"), "rb") as fh:
+            self.assertIn("RESULT_SHA256: %s" % hashlib.sha256(fh.read()).hexdigest(), out)
+
+    def test_exec_grader_must_be_executable(self):
+        self.p.add_case("R1", "P")
+        g = self.p.write("graders/g_exec.sh", "#!/bin/sh\nexit 0\n")
+        os.chmod(g, 0o644)
+        self.p.spec["graders"]["g_ok"] = {"path": "graders/g_exec.sh", "interpreter": "exec"}
+        self.p.save_spec()
+        code, out, _ = self.p.gate("regression")
+        self.assertEqual(code, 3, out)
+        self.assertIn("is not executable", out)
+        os.chmod(g, 0o755)
+        code, out, _ = self.p.gate("regression")
+        self.assertNotIn("is not executable", out)
 
     def test_always_failing_case_is_fail(self):
         self.p.add_case("R1", "F")
@@ -757,6 +801,27 @@ class TestCompare(Base):
         self.assertEqual(code, 3, out)
         self.assertNotIn("Traceback", out)
 
+    def test_catch_all_of_compare_turns_an_unexpected_exception_into_blocked(self):
+        # the input above is already caught by the schema check; this reaches the catch-all itself
+        a = self.make("a")
+        code, out = run_with_injected_error(self, "validate",
+                                            ["compare", a, a, "--purpose", "system", "--eval-dir", self.p.eval])
+        self.assertEqual(code, 3, out)
+        self.assertIn("internal error: RuntimeError: injected", out)
+
+    def test_catch_all_of_validate_turns_an_unexpected_exception_into_blocked(self):
+        code, out = run_with_injected_error(self, "load_assets", ["validate", "--eval-dir", self.p.eval])
+        self.assertEqual(code, 3, out)
+        self.assertIn("internal error: RuntimeError: injected", out)
+
+    def test_catch_all_of_gate_turns_an_unexpected_exception_into_blocked(self):
+        self.p.add_case("R1", "P")
+        code, out = run_with_injected_error(self, "select_cases",
+                                            ["gate", "regression", "--eval-dir", self.p.eval,
+                                             "--adapter-cmd", self.p.adapter_cmd()])
+        self.assertEqual(code, 3, out)
+        self.assertIn("internal error: RuntimeError: injected", out)
+
     def test_assets_differ(self):
         a = self.make("a")
         self.p.add_case("R2", "P")
@@ -888,6 +953,42 @@ class TestRunIntegrity(Base):
         self.assertEqual(code, 3, out)
         self.assertIn("changed during the run", out)
         self.assertAttackHappened()
+
+    def test_records_of_finished_trials_survive_a_run_stopped_by_tampering(self):
+        self.p.add_case("R1", "PG")            # first trial passes, the second rewrites the grader
+        code, out, rd = self.p.gate("regression")
+        self.assertEqual(code, 3, out)
+        self.assertIn("changed during the run", out)
+        self.assertAttackHappened()
+        recs = self.p.trials(rd)
+        self.assertGreaterEqual(len(recs), 1)
+        self.assertEqual(recs[0]["criteria"], {"SC1": "pass"})
+        res = self.p.result(rd)
+        self.assertEqual(res["status"], "BLOCKED")
+        for rel, want in res["artifacts_sha256"].items():
+            with open(os.path.join(rd, *rel.split("/")), "rb") as fh:
+                self.assertEqual(hashlib.sha256(fh.read()).hexdigest(), want, rel)
+        self.assertTrue(os.listdir(os.path.join(rd, "evidence")))
+        with open(os.path.join(rd, "result.json"), "rb") as fh:
+            self.assertIn("RESULT_SHA256: %s" % hashlib.sha256(fh.read()).hexdigest(), out)
+
+    def test_write_verified_detects_a_file_that_reads_back_differently(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "x.json")
+            self.assertEqual(pe.write_verified(p, b"abc"), hashlib.sha256(b"abc").hexdigest())
+            real_open = open
+
+            def tampering_open(path, mode="r", *a, **kw):
+                if path == p and "r" in mode:
+                    with real_open(p, "wb") as fh:          # what a concurrent writer would do
+                        fh.write(b"forged")
+                return real_open(path, mode, *a, **kw)
+            pe.open = tampering_open
+            try:
+                with self.assertRaises(pe.Blocked):
+                    pe.write_verified(p, b"abc")
+            finally:
+                del pe.open
 
     def test_grader_runs_from_the_bytes_loaded_at_start(self):
         self.p.add_case("R1", "P")

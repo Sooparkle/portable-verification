@@ -69,6 +69,7 @@ need_dir() { # PATH: absent, or a writable directory
   if [ -e "$1" ] || [ -L "$1" ]; then
     [ -d "$1" ] && [ ! -L "$1" ] || die "exists but is not a directory: ${1#$target/}"
     [ -w "$1" ] || die "directory is not writable: ${1#$target/}"
+    [ -x "$1" ] || die "directory is not searchable (no x permission): ${1#$target/}"
   fi
 }
 need_file() { # PATH: absent, or a writable regular file
@@ -179,7 +180,9 @@ plant: done. Next:
   2. Write graders under .eval/graders/ and cases under .eval/cases/ (see references/case.template.json).
   3. Write your adapter (it is part of the system under test, not an evaluation asset) and run:
        python3 -I .eval/pe.py validate --eval-dir .eval
-  4. Official results need CI that runs pe.py from the base branch: see references/ci-eval-trusted.yml,
+  4. Trusted results need CI that runs pe.py from the base branch: see references/ci-eval-trusted.yml,
      and protect .eval/ and .github/ with CODEOWNERS + required review (references/CODEOWNERS.example).
+     As shipped that workflow runs the adapter as the same user as pe.py: experimental, not an official
+     verdict, until the adapter runs as another OS user or in a container (docs/contracts.md section 1).
   Update later: run plant.sh from a newer release with --force. spec.json, system-manifest.json, cases, graders and refs are kept.
 EOF

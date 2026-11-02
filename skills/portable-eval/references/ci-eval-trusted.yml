@@ -1,5 +1,11 @@
-# Official eval gate. The gate tool and the evaluation assets come from the BASE commit of the
-# pull request, never from the PR's own working tree.
+# Trusted eval gate (experimental). The gate tool and the evaluation assets come from the BASE commit
+# of the pull request, never from the PR's own working tree.
+#
+# NOT an official verdict as shipped: the adapter (the system under test) runs as the same user as
+# pe.py. pe.py then detects tampering but does not prevent it (docs/contracts.md section 1). For an
+# official verdict, run the adapter as another OS user or in a container that cannot write to the
+# trusted checkout, the Python installation pe.py and the graders use, the temporary directory and
+# pr/.eval/runs/. That set-up depends on your runner and is not part of this template.
 #
 # What this does NOT protect: a pull request can edit this workflow file itself. Protect
 # .github/ and .eval/ with CODEOWNERS + required code-owner review (see CODEOWNERS.example),

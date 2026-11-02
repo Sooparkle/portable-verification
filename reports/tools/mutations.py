@@ -29,9 +29,12 @@ M = [
     ("pe", "evidence size cap removed", PE, '        elif size > EVIDENCE_CAP:', '        elif False:', ["test_a8_oversize"]),
     ("pe", "only the final attempt counts for the evidence invariant", PE, '        if rec["reason"] == "evidence_invalid":\n            run.any_invalid_evidence = True', '        pass', ["invalid_evidence_attempt"]),
     ("pe", "failed artifact write keeps a FAIL", PE, '        status, detail = "BLOCKED", "artifacts not preserved: %s" % e', '        status, detail = (status if status == "FAIL" else "BLOCKED"), "artifacts not preserved: %s" % e', ["test_a17"]),
-    ("pe", "NaN accepted in JSON", PE, '    return json.loads(data, parse_constant=_reject_constant)', '    return json.loads(data)', ["nan", "items_false"]),
+    ("pe", "NaN accepted in JSON", PE, 'parse_constant=_reject_constant, parse_float', 'parse_float', ["nan", "items_false"]),
+    ("pe", "1e999 read as inf", PE, ', parse_float=_finite_float)', ')', ["overflow"]),
     ("pe", "items: false ignored", PE, '        if items is False and instance:', '        if False:', ["items_false"]),
-    ("pe", "catch-all removed in compare (unexpected errors become tracebacks)", PE, '    except Exception as e:\n        print("STATUS: BLOCKED (%s)" % (e if isinstance(e, Blocked) else "internal error: %s: %s" % (type(e).__name__, e)))\n        return EXIT["BLOCKED"]\n\n\n# ------', '    except Blocked as e:\n        print("STATUS: BLOCKED (%s)" % e)\n        return EXIT["BLOCKED"]\n\n\n# ------', ["unexpected_error"]),
+    ("pe", "catch-all removed in compare", PE, '(args.purpose, a["mode"]))\n        return 0\n    except Exception as e:', '(args.purpose, a["mode"]))\n        return 0\n    except Blocked as e:', ["catch_all_of_compare", "unexpected_error"]),
+    ("pe", "catch-all removed in validate", PE, '        print("STATUS: PASS (valid)")\n        return 0\n    except Exception as e:', '        print("STATUS: PASS (valid)")\n        return 0\n    except Blocked as e:', ["catch_all_of_validate"]),
+    ("pe", "catch-all removed in gate", PE, '    except Exception as e:     # fail closed', '    except Blocked as e:     # fail closed', ["catch_all_of_gate"]),
     ("pe", "non-object env in the system manifest not rejected", PE, '        if k in data and not isinstance(data[k], dict):', '        if False:', ["null_env"]),
     ("pe", "null/empty manifest fields tolerated", PE, '            errs = validate(m, schema)\n            if errs:', '            errs = []\n            if errs:', ["test_a4"]),
     ("pe", "unrunnable trial counted as pass", PE, '    if any(s["outcome"] == "unrunnable" for s in reg):\n        return "blocked"', '    if False:\n        return "blocked"', ["persistent_infra"]),
@@ -39,10 +42,19 @@ M = [
     ("pe", "extra trials never scheduled", PE, '    if bad == 1 and not unrunnable:\n        for _ in range(3):', '    if False:\n        for _ in range(3):', ["Simulation"]),
     ("pe", "relative adapter paths not resolved", PE, '        adapter_argv = absolutize_adapter(adapter_argv, os.getcwd())\n', '', ["AdapterPaths"]),
     ("pe", "grader-level self-test coverage disabled", PE, '    if missing:\n        raise Blocked("self-test failed: no known_bad', '    if False:\n        raise Blocked("self-test failed: no known_bad', ["TestContracts"]),
+    ("pe", "exec grader without the executable bit accepted", PE, '        if interp == "exec" and not os.access(gp, os.X_OK):', '        if False:', ["exec_grader"]),
+    ("pe", "a run stopped early drops the finished trials' records", PE, '            if run is not None and run.records:', '            if False:', ["records_of_finished"]),
+    ("pe", "read-back of written artifacts not compared", PE, '    if back != data:', '    if False:', ["write_verified"]),
+    ("pe", "RESULT_SHA256 not printed", PE, '    if result_sha:\n        # result.json cannot hold', '    if False:\n        # result.json cannot hold', ["test_pass"]),
     ("pe", "verify.sh no longer flags .eval/", VS, None, None, ["test_a1c"]),
     ("sh", "install.sh hash comparison off", INS, 'if [ "$actual" != "$want" ]; then', 'if false; then', "install"),
     ("sh", "install.sh pre-flight --check skipped", INS, 'for s in "${skills[@]}"; do run_plant "$s" --check >/dev/null || die "pre-flight check failed for $s (nothing was changed)"; done', ':', "install"),
     ("sh", "install.sh compares with the wrong skill's pin", INS, 'want=$(pin_for "$s")', 'want=$(pin_for portable-verification)', "install"),
+    ("sh", "eval plant.sh: search permission not checked", "skills/portable-eval/scripts/plant.sh", '    [ -x "$1" ] || die "directory is not searchable', '    true || die "directory is not searchable', "install"),
+    ("sh", "verification plant.sh: search permission not checked", "skills/portable-verification/scripts/plant.sh", '    [ -x "$1" ] || die "directory is not searchable', '    true || die "directory is not searchable', "install"),
+    ("sh", "check-release: tag looked up on origin, not in REPO", "build/check-release.sh", 'remote_url=${CHECK_RELEASE_REMOTE:-https://github.com/$repo.git}', 'remote_url=origin', "check-release"),
+    ("sh", "check-release: archive top level not checked", "build/check-release.sh", '    [ "$top" = "$skill" ] ||', '    true ||', "check-release"),
+    ("sh", "check-release: links in the archive not checked", "build/check-release.sh", '    [ -z "$odd" ] ||', '    true ||', "check-release"),
     ("sh", "eval plant.sh: wrong-kind paths not checked", "skills/portable-eval/scripts/plant.sh", 'need_dir() { # PATH: absent, or a writable directory\n  if', 'need_dir() { # PATH: absent, or a writable directory\n  return 0\n  if', "plant-eval"),
 ]
 
@@ -69,6 +81,8 @@ def run_sh(scenario):
     return out.count("\nnot ok - ") + (1 if out.startswith("not ok - ") else 0), int(total.group(1)) + int(total.group(2)) if total else 0
 
 
+# Each pattern must match the intended place: the first occurrence is replaced. (Until the second review the
+# "compare" catch-all mutant matched cmd_validate's block instead; see test-report section 16.)
 # Removed on purpose: "compare reads the decision time of manifest A only". Because decision_fixed_at must be
 # equal in both manifests, that mutant is equivalent (no input can tell it apart); see test-report section 14.
 caught_all = True

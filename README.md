@@ -117,7 +117,7 @@ python3 -I .eval/pe.py gate all --eval-dir .eval --adapter-cmd '["python3","-I",
 
 **Two modes, and why.** A local run uses the working tree's `.eval/` and prints `MODE: local (unofficial)`: it is feedback, not a verdict, because whoever changes the code under test can also change the graders. A trusted run (`--trusted-ref`) grades with a copy extracted from a protected ref, refuses to run if the running `pe.py` differs from that ref's `pe.py`, and compares the working tree's evaluation assets with the ref's: a difference can only end as `NEEDS_REVIEW`, never `PASS`. A trusted PASS needs seven invariants (listed in `result.json`). Precedence: BLOCKED > FAIL > NEEDS_REVIEW > PASS.
 
-The adapter runs with the same user rights as `pe.py`. The tool runs graders from the bytes it loaded at the start, re-hashes the assets before every grading step, and writes trial records only at the end, so an adapter that rewrites a grader or deletes records during the run ends in BLOCKED. That is detection, not isolation: for an official verdict the system under test must also run as a different OS user or in a separate container, which the tool cannot check (see `docs/contracts.md` section 1).
+The adapter runs with the same user rights as `pe.py`. The tool runs graders from the bytes it loaded at the start, re-hashes the assets before every grading step, and writes trial records only at the end, so an adapter that rewrites a grader or deletes records during the run ends in BLOCKED. That is detection, not isolation: the adapter can still race the tool, or plant start-up code in a Python installation it can write to. For an official verdict the system under test must run as a different OS user or in a separate container that cannot write to `pe.py`, the trusted checkout, the Python installation, the temporary directory and the run output, which the tool cannot check (see `docs/contracts.md` section 1).
 
 Wire it into verification with one line in `checks.txt` (local feedback), and run the trusted gate in CI:
 
@@ -125,7 +125,7 @@ Wire it into verification with one line in `checks.txt` (local feedback), and ru
 eval-regression  yes  python3 -I .eval/pe.py gate regression --eval-dir .eval --adapter-cmd '["python3","-I","adapters/run.py"]'
 ```
 
-`verify.sh` reports `NEEDS_REVIEW` when anything under `.eval/` (spec, cases, graders, schemas, refs, snapshots, `pe.py`) changed. The official gate belongs in `references/ci-eval-trusted.yml`; it runs `pe.py` and the assets from the pull request's base commit. That workflow can itself be edited by a pull request, so protect `.github/` and `.eval/` with CODEOWNERS plus required code-owner review (`references/CODEOWNERS.example`) and make the job a required check. Those are repository settings; the tool cannot enforce them.
+`verify.sh` reports `NEEDS_REVIEW` when anything under `.eval/` (spec, cases, graders, schemas, refs, snapshots, `pe.py`) changed. The trusted gate belongs in CI; `references/ci-eval-trusted.yml` runs `pe.py` and the assets from the pull request's base commit. As shipped it runs the adapter as the same user, so it is experimental, not an official verdict. That workflow can itself be edited by a pull request, so protect `.github/` and `.eval/` with CODEOWNERS plus required code-owner review (`references/CODEOWNERS.example`) and make the job a required check. Those are repository settings; the tool cannot enforce them.
 
 A passing safety gate is not a safety claim. The gate prints the number of risk families and says `SAFETY_CLAIM: not demonstrated` until there are enough independent families (59 for a 5% bound, assuming independence).
 
@@ -160,7 +160,7 @@ A passing safety gate is not a safety claim. The gate prints the number of risk 
 - Secret redaction covers environment variable values (names containing TOKEN, SECRET, KEY, PASSWORD, PASSWD, CREDENTIAL, COOKIE; 6+ characters), Authorization/Cookie headers and Bearer tokens. It cannot see secrets hardcoded in files, secrets not in the environment, or screenshots.
 - `CHECK_TIMEOUT` needs `timeout` or `gtimeout`. macOS has neither by default (install coreutils); without one the run is `BLOCKED`.
 - Tier B (drive the real app) and Tier C (independent review) in `SKILL.md` are instructions. The script only enforces what is declared in `checks.txt`.
-- portable-eval: environment isolation and policy observers are claims made by the adapter; the tool only checks what is claimed. Local results are unofficial. Official results depend on repository settings the tool cannot enforce. Gate probabilities assume independent cases and a constant per-trial reliability; a shared outage breaks that assumption.
+- portable-eval: environment isolation and policy observers are claims made by the adapter; the tool only checks what is claimed. Local results are unofficial. Trusted results from the shipped CI template are not official either (the adapter runs as the same user); official results also depend on repository settings the tool cannot enforce. Gate probabilities assume independent cases and a constant per-trial reliability; a shared outage breaks that assumption.
 - No measurement shows this combination works better than any single one of its sources.
 - Windows is untested (use WSL or Git Bash at your own risk).
 

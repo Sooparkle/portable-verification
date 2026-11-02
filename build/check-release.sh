@@ -5,16 +5,19 @@
 #   (job names contain commas, e.g. "test (ubuntu-latest, 3.9)", so the list separator is ";")
 #
 # Checks (any failure = exit 1):
-#   1. the local tag and the tag on origin point to the same commit
+#   1. the local tag and the tag in REPO (the repository install.sh names, where CI and the release are
+#      looked up) point to the same commit; origin is not used, it can be a fork
 #   2. every expected CI check run exists on exactly that commit, and every check run there succeeded
 #      (default list = EXPECTED_CHECKS below, which a test keeps in step with .github/workflows/ci.yml)
 #   3. install.sh as of the tag has pinned sha256 values (no UNSET) and a VERSION equal to the tag
 #   4. the release has the archive of each pinned skill, and sha256(downloaded asset) == the pin
-#   5. the content of each asset (files, bytes, executable bits) equals skills/<skill>/ at the tag
+#   5. each asset holds exactly one top-level folder <skill>/, only regular files and folders, and its
+#      content (files, bytes, executable bits) equals skills/<skill>/ at the tag
 #   6. (--rebuild) the tag is rebuilt locally; reports whether the archive bytes are identical.
 #      Different tar/gzip implementations can give different bytes, so a difference is a warning
 #      unless --require-identical is given. Check 5 already ties the asset to the tag's source.
 # Needs: git, gh (authenticated), tar, shasum or sha256sum. Reads only; changes nothing in the repository.
+# Tests: CHECK_RELEASE_REMOTE overrides the URL used for check 1 (default https://github.com/<REPO>.git).
 set -uo pipefail
 
 EXPECTED_CHECKS="lint;test (ubuntu-latest, 3.9);test (ubuntu-latest, 3.13);test (macos-latest, 3.9);test (macos-latest, 3.13)"
@@ -65,13 +68,14 @@ for p in $pins; do
   [ "${p#*:}" = UNSET ] && fail "${p%%:*} is pinned to UNSET at $tag"
 done
 
-# 1. the tag on origin is the same commit
-remote=$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}" 2>/dev/null)
+# 1. the tag in REPO is the same commit (the same repository CI and the release are read from below)
+remote_url=${CHECK_RELEASE_REMOTE:-https://github.com/$repo.git}
+remote=$(git ls-remote --tags "$remote_url" "refs/tags/$tag" "refs/tags/$tag^{}" 2>/dev/null)
 remote_commit=$(echo "$remote" | awk '$2 ~ /\^\{\}$/ {print $1}')
 [ -n "$remote_commit" ] || remote_commit=$(echo "$remote" | awk 'NR==1 {print $1}')
-if [ -z "$remote_commit" ]; then fail "tag $tag not found on origin"
-elif [ "$remote_commit" = "$commit" ]; then pass "tag on origin points to the same commit"
-else fail "tag on origin points to $remote_commit, local tag to $commit"; fi
+if [ -z "$remote_commit" ]; then fail "tag $tag not found in $repo"
+elif [ "$remote_commit" = "$commit" ]; then pass "tag in $repo points to the same commit"
+else fail "tag in $repo points to $remote_commit, local tag to $commit"; fi
 
 # 2. CI on exactly the tagged commit: every expected job is there, and everything there succeeded
 runs=$(gh api "repos/$repo/commits/$commit/check-runs?per_page=100" --jq '.check_runs[] | .name + "\t" + (.conclusion // "pending")' 2>/dev/null)
@@ -97,6 +101,10 @@ for p in $pins; do
     mkdir -p "$tmp/a-$skill" "$tmp/s-$skill"
     tar -xzf "$tmp/$asset" -C "$tmp/a-$skill" 2>/dev/null || fail "$asset: cannot extract"
     git archive "$tag" "skills/$skill" | tar -x -C "$tmp/s-$skill"
+    top=$(ls -A "$tmp/a-$skill")
+    [ "$top" = "$skill" ] || fail "$asset: top level must be only $skill/, found: $(echo "$top" | tr '\n' ' ')"
+    odd=$(find "$tmp/a-$skill" -mindepth 1 ! -type f ! -type d)
+    [ -z "$odd" ] || fail "$asset: holds links or special files: $(echo "$odd" | sed "s|$tmp/a-$skill/||" | tr '\n' ' ')"
     if diff -r "$tmp/a-$skill/$skill" "$tmp/s-$skill/skills/$skill" >/dev/null 2>&1; then
       xa=$(cd "$tmp/a-$skill/$skill" && find . -type f -perm -u+x | LC_ALL=C sort)
       xs=$(cd "$tmp/s-$skill/skills/$skill" && find . -type f -perm -u+x | LC_ALL=C sort)

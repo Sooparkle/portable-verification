@@ -117,7 +117,7 @@ python3 -I .eval/pe.py gate all --eval-dir .eval --adapter-cmd '["python3","-I",
 
 **두 가지 모드와 그 이유.** 로컬 실행은 작업 트리의 `.eval/`을 쓰고 `MODE: local (unofficial)`을 출력합니다. 평가 대상 코드를 바꾸는 쪽이 채점기도 바꿀 수 있으므로 이것은 판정이 아니라 피드백입니다. trusted 실행(`--trusted-ref`)은 보호된 ref에서 추출한 사본으로 채점하고, 실행 중인 `pe.py`가 그 ref의 `pe.py`와 다르면 실행을 거부하며, 작업 트리의 평가 자산을 ref의 것과 비교합니다. 차이가 있으면 결과는 `NEEDS_REVIEW`까지만 가능하고 `PASS`가 될 수 없습니다. trusted PASS에는 7개 불변조건이 필요합니다(`result.json`에 기록). 우선순위: BLOCKED > FAIL > NEEDS_REVIEW > PASS.
 
-어댑터는 `pe.py`와 같은 사용자 권한으로 실행됩니다. 도구는 시작할 때 읽어 둔 바이트로 채점기를 실행하고, 매 채점 전에 자산 해시를 다시 확인하고, 시행 기록은 마지막에만 씁니다. 그래서 실행 중에 채점기를 고치거나 기록을 지우는 어댑터는 BLOCKED로 끝납니다. 다만 이것은 격리가 아니라 탐지입니다. 공식 판정이 되려면 평가 대상 시스템을 다른 OS 사용자나 별도 컨테이너에서 실행해야 하고, 도구는 그것을 확인할 수 없습니다(`docs/contracts.md` 1절).
+어댑터는 `pe.py`와 같은 사용자 권한으로 실행됩니다. 도구는 시작할 때 읽어 둔 바이트로 채점기를 실행하고, 매 채점 전에 자산 해시를 다시 확인하고, 시행 기록은 마지막에만 씁니다. 그래서 실행 중에 채점기를 고치거나 기록을 지우는 어댑터는 BLOCKED로 끝납니다. 다만 이것은 격리가 아니라 탐지입니다. 어댑터는 여전히 도구와 경쟁하거나, 쓰기 가능한 Python 설치에 시작 코드를 심을 수 있습니다. 공식 판정이 되려면 평가 대상 시스템을 `pe.py`, trusted 체크아웃, Python 설치, 임시 디렉터리, 실행 결과 폴더에 쓸 수 없는 다른 OS 사용자나 별도 컨테이너에서 실행해야 하고, 도구는 그것을 확인할 수 없습니다(`docs/contracts.md` 1절).
 
 verification과는 `checks.txt`의 한 줄로 연결하고(로컬 피드백), trusted 게이트는 CI에서 실행합니다.
 
@@ -125,7 +125,7 @@ verification과는 `checks.txt`의 한 줄로 연결하고(로컬 피드백), tr
 eval-regression  yes  python3 -I .eval/pe.py gate regression --eval-dir .eval --adapter-cmd '["python3","-I","adapters/run.py"]'
 ```
 
-`.eval/` 아래(spec, 케이스, 채점기, 스키마, refs, snapshots, `pe.py`)가 바뀌면 `verify.sh`는 `NEEDS_REVIEW`를 냅니다. 공식 게이트는 `references/ci-eval-trusted.yml`에 있고, PR의 기준 커밋에서 가져온 `pe.py`와 자산으로 실행됩니다. 그 워크플로 자체도 PR이 고칠 수 있으므로 `.github/`와 `.eval/`을 CODEOWNERS와 코드 오너 필수 리뷰(`references/CODEOWNERS.example`)로 보호하고 그 job을 필수 검사로 지정해야 합니다. 이것은 저장소 설정이라 도구가 강제하지 못합니다.
+`.eval/` 아래(spec, 케이스, 채점기, 스키마, refs, snapshots, `pe.py`)가 바뀌면 `verify.sh`는 `NEEDS_REVIEW`를 냅니다. trusted 게이트는 CI에서 돌립니다. `references/ci-eval-trusted.yml`은 PR의 기준 커밋에서 가져온 `pe.py`와 자산으로 실행됩니다. 기본 제공 템플릿은 어댑터를 같은 사용자로 실행하므로 실험적 결과이며, 공식 판정이 아닙니다. 그 워크플로 자체도 PR이 고칠 수 있으므로 `.github/`와 `.eval/`을 CODEOWNERS와 코드 오너 필수 리뷰(`references/CODEOWNERS.example`)로 보호하고 그 job을 필수 검사로 지정해야 합니다. 이것은 저장소 설정이라 도구가 강제하지 못합니다.
 
 안전 게이트를 통과했다고 안전하다는 주장이 되지는 않습니다. 게이트는 위험 family 수를 출력하고, 독립적인 family가 충분해질 때까지(5% 상한에 59개, 독립 가정) `SAFETY_CLAIM: not demonstrated`라고 말합니다.
 
@@ -160,7 +160,7 @@ eval-regression  yes  python3 -I .eval/pe.py gate regression --eval-dir .eval --
 - 비밀값 제거는 환경변수 값(이름에 TOKEN, SECRET, KEY, PASSWORD, PASSWD, CREDENTIAL, COOKIE 포함, 6자 이상), Authorization/Cookie 헤더, Bearer 토큰만 다룹니다. 파일에 하드코딩된 값, 환경변수가 아닌 비밀값, 스크린샷은 볼 수 없습니다.
 - `CHECK_TIMEOUT`은 `timeout` 또는 `gtimeout`이 필요합니다. macOS에는 기본으로 없으므로(coreutils 설치) 없으면 실행이 `BLOCKED`가 됩니다.
 - `SKILL.md`의 Tier B(실제 앱 구동)와 Tier C(독립 리뷰)는 지침입니다. 스크립트가 강제하는 것은 `checks.txt`에 선언된 검사뿐입니다.
-- portable-eval: 환경 격리와 정책 관측 장치는 어댑터가 하는 주장입니다. 도구는 주장된 내용만 확인합니다. 로컬 결과는 비공식입니다. 공식 결과는 도구가 강제할 수 없는 저장소 설정에 달려 있습니다. 게이트 확률은 케이스 독립과 시행당 신뢰도 일정을 가정하며, 공통 장애가 있으면 이 가정이 깨집니다.
+- portable-eval: 환경 격리와 정책 관측 장치는 어댑터가 하는 주장입니다. 도구는 주장된 내용만 확인합니다. 로컬 결과는 비공식입니다. 기본 CI 템플릿의 trusted 결과도 공식 판정이 아닙니다(어댑터가 같은 사용자로 실행됨). 공식 결과는 도구가 강제할 수 없는 저장소 설정에도 달려 있습니다. 게이트 확률은 케이스 독립과 시행당 신뢰도 일정을 가정하며, 공통 장애가 있으면 이 가정이 깨집니다.
 - 이 조합이 출처 하나만 쓰는 것보다 낫다는 측정 결과는 없습니다.
 - Windows는 시험하지 않았습니다(WSL이나 Git Bash는 각자 책임으로).
 

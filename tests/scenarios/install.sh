@@ -212,6 +212,15 @@ if [ "$(id -u)" -ne 0 ]; then
   chmod u+w "$t"
   assert_eq "read-only target fails in the pre-flight check" 1 "$CODE"
   assert_eq "read-only target stays empty" "0" "$(find "$t" -mindepth 1 | wc -l | tr -d ' ')"
+  # writable but not searchable: -w alone passes, then the eval install would fail after verification was written
+  for d in .eval .verification; do
+    t="$WORK/t-noexec$d"; mkdir -p "$t/$d"; before=$(fingerprint "$t"); chmod 200 "$t/$d"
+    run_install "$good" "$URL" -- --skill both --target "$t" --agent claude
+    chmod 700 "$t/$d"
+    assert_eq "a directory without search permission fails in the pre-flight check: $d" 1 "$CODE"
+    assert_contains "pre-flight names the unsearchable directory: $d" "$OUT" "not searchable"
+    assert_eq "unsearchable directory leaves the target untouched: $d" "$before" "$(fingerprint "$t")"
+  done
 else
   echo "# note: running as root, the read-only target test was skipped"
 fi

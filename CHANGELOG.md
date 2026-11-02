@@ -57,8 +57,8 @@ table on top; what the tool promises is fixed in `docs/contracts.md`.
 - Self-test coverage is computed over the criteria graded in this run (a safety-only run no longer needs the normal
   graders); the severity warning is printed also when nothing is selected.
 - `trials.jsonl` records `adapter_sha256` and per-criterion `grader_sha256`.
-- `check-release.sh`: the tag on origin must be the same commit; every expected CI job must be present (the list is
-  kept in step with `ci.yml` by a test); the content of each asset must equal `skills/<skill>/` at the tag.
+- `check-release.sh`: the tag must point to the same commit remotely; every expected CI job must be present (the
+  list is kept in step with `ci.yml` by a test); the content of each asset must equal `skills/<skill>/` at the tag.
 - Tests: the unittest exit code and test count are now checked by `tests/scenarios/eval.sh`; the oversize-evidence test
   isolates the size cap; attack tests now assert that the attack actually happened.
 
@@ -72,15 +72,37 @@ table on top; what the tool promises is fixed in `docs/contracts.md`.
 - Second external review (Codex, read-only, on e2159ad; `reports/codex-review-r2-v0.2.0.md`): verdict "release after
   fixes". B2, B3, B5, B8, B9 resolved; B1, B4, B6, B7 partly resolved; three regressions found (records of finished
   trials are lost when a run aborts; the manifest hash is taken from a re-read without comparison and `result.json` is
-  not read back as the contract says; the executable bit of `exec` graders is no longer required). Not fixed yet;
-  see the report, section 15.
+  not read back as the contract says; the executable bit of `exec` graders is no longer required). Fixed below;
+  see the report, sections 15 and 16.
+
+### Fixed after the second review (reports/codex-review-r2-v0.2.0.md)
+- A run stopped early (BLOCKED during the run, e.g. on tampering) still writes the records and evidence of the trials
+  that finished, with their hashes in `result.json`.
+- Every artifact (`trials.jsonl`, evidence, `manifest.json`, `result.json`) is written from the bytes held in memory and
+  must read back equal to them; the recorded hash is the one of those bytes. `result.json` cannot hold its own hash,
+  so it is printed as `RESULT_SHA256: <sha>`.
+- An `exec` grader must be executable again (checked when the assets are loaded).
+- `1e999` and other numbers that overflow to infinity are refused when JSON is read, also in free-form fields.
+- `plant.sh --check` (both skills) also requires search (`x`) permission on existing directories.
+- `check-release.sh` checks the tag in the repository named by `install.sh` (`REPO`, where CI and the release are read),
+  not `origin`; each asset must hold exactly one top-level folder and only regular files and folders. A new scenario
+  (`tests/scenarios/check-release.sh`, fake `gh`, local bare repository) checks that a moved tag, a missing or failed
+  CI job, an extra top-level file, changed content, a link and a missing asset are each rejected.
+- A test now reaches `compare`'s catch-all (the mutant that survived before).
+- The trusted CI template is labelled experimental: as shipped the adapter runs as the same user as `pe.py`, so its
+  result is not an official verdict. `docs/contracts.md` section 1 lists the known ways around the run-integrity checks
+  (races by an escaped process, start-up code in a writable Python installation, rewriting the run directory) and what
+  another OS user or container must not be able to write. `adapter_sha256` is documented as the hash of the command
+  line, not of the adapter's code.
 
 ### Not run / known gaps
 - The workflows of this repository and the planted workflows (`ci-github-actions.yml`, `ci-eval-trusted.yml`) have not run on GitHub.
 - Real LLM agent adapters, LLM judges, blind sets, accumulated case state, YAML input, Windows, `agentskills validate`,
   loading the skills inside each agent tool.
 - CODEOWNERS, required reviews and required checks are repository settings; nothing here enforces or tests them.
-- Official (trusted) results are only as good as the CI that runs a `pe.py` from the base branch; a pull request can edit the workflow file.
+- Trusted results are only as good as the CI that runs a `pe.py` from the base branch; a pull request can edit the workflow file.
+- Same-user runs (the shipped CI template included) detect tampering but do not prevent it; an official verdict needs
+  the adapter to run as another OS user or in a container. Not implemented or tested here.
 - The golden tests prove the formulas equal the design document, not that the design's initial values are right.
 
 ## 0.1.0 (2026-11-01)

@@ -10,7 +10,7 @@ This is an initial implementation of the "small team" subset of the Portable-Eva
 
 ## Rules
 - The agent never declares PASS. `python3 -I .eval/pe.py gate ...` prints the status; report the `MODE`, `STATUS` and `EVIDENCE` lines exactly as printed.
-- A `MODE: local (unofficial)` result is feedback for development. Never present it as an official verdict. An official verdict is a `MODE: trusted` result from CI (`ci-eval-trusted.yml`).
+- A `MODE: local (unofficial)` result is feedback for development. Never present it as an official verdict. A `MODE: trusted` result from CI (`ci-eval-trusted.yml`) is the strongest result the tool gives, but as shipped the adapter runs as the same user as `pe.py`, so it is not an official verdict either: report it as "trusted (same-user, experimental)" unless the project runs the adapter as another OS user or in a separate container (`docs/contracts.md` section 1).
 - Never edit evaluation assets to make a gate pass: `.eval/spec.json`, `cases/`, `graders/`, `refs/`, `snapshots/`, `schemas/`, `pe.py`. If one of them must change, say why in the report; a human reviews it. `verify.sh` reports `NEEDS_REVIEW` for these paths.
 - Never put a `blind` case under `.eval/cases/`. The tool refuses it (BLOCKED).
 - A passing safety gate is not a safety claim. Read the `SAFETY_CLAIM` line.

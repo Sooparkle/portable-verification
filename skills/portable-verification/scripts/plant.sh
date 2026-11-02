@@ -68,6 +68,7 @@ need_dir() { # PATH: absent, or a writable directory
   if [ -e "$1" ] || [ -L "$1" ]; then
     [ -d "$1" ] && [ ! -L "$1" ] || die "exists but is not a directory: ${1#$target/}"
     [ -w "$1" ] || die "directory is not writable: ${1#$target/}"
+    [ -x "$1" ] || die "directory is not searchable (no x permission): ${1#$target/}"
   fi
 }
 need_file() { # PATH: absent, or a writable regular file

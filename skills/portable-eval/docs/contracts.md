@@ -21,7 +21,7 @@ A local result is never an official verdict. Trusted PASS requires all seven inv
 4. `selftest_passed`: every grader used passed its self-test.
 5. `graded_with_ref_copies`: grading used the grader bytes read from the extracted REF copy when it was loaded.
 6. `gate_executed`: at least one case was selected, every selected case reached a decision, and the content hash of the assets used for grading was unchanged before every grading step and at the end of the run.
-7. `artifacts_preserved`: `trials.jsonl`, the evidence files, `manifest.json` and `result.json` were written at the end of the run and read back; their sha256 values are in `result.json` under `artifacts_sha256`. A write failure is BLOCKED, whatever the verdict would have been.
+7. `artifacts_preserved`: `trials.jsonl`, the evidence files, `manifest.json` and `result.json` were written at the end of the run from the bytes held in memory, and each read back equal to those bytes. The sha256 values of all but `result.json` are in `result.json` under `artifacts_sha256`; `result.json` cannot hold its own hash, so it is printed as `RESULT_SHA256: <sha>` (in CI it lands in the job log, outside the run directory). A write failure or a file that reads back differently is BLOCKED, whatever the verdict would have been. A run stopped early (BLOCKED during the run) still writes the records and evidence of the trials that finished, and their hashes.
 
 **Run integrity against the adapter.** The adapter runs with the same user rights as `pe.py`, so it could try to change what is used for grading while it runs. The tool therefore:
 - reads every grader into memory when the assets are loaded and runs each grading from those bytes, written to a fresh private directory (a grader file changed later has no effect);
@@ -29,7 +29,12 @@ A local result is never an official verdict. Trusted PASS requires all seven inv
 - keeps trial records and evidence in memory and writes them only at the end (an adapter that deletes or rewrites files in the run directory cannot change them);
 - gives the adapter its own `TMPDIR`, inside the trial's temporary directory.
 
-**This is detection, not isolation.** A process that escapes the adapter's process group (for example with `setsid`) and keeps running could still race the tool, and anything the same user can do to the files can be done by the adapter. An official verdict therefore also needs the system under test to run as a different OS user or in a separate container from `pe.py` and its assets. The tool does not and cannot check that.
+**This is detection, not isolation.** Anything the same user can do, the adapter can do. Known ways around the checks above, when the adapter runs as the same user:
+- a process that escapes the adapter's process group (for example with `setsid`) can race the tool: replace the grader file written for one grading step between writing and running it, or change the evidence file while the grader reads it and change it back;
+- if the adapter can write to the Python installation that `pe.py` and the graders use (for example a virtualenv's `site-packages`), a `.pth` or `sitecustomize` file runs in every later grader process and can make it pass without running the grader. `-I` does not turn off `site`. This needs no race;
+- the run directory and the hashes in `result.json` can be rewritten together after the run.
+
+An official verdict therefore needs the system under test to run as a different OS user or in a separate container that cannot write to: `pe.py` and the trusted checkout, the Python installation `pe.py` and the graders use, the temporary directory `pe.py` uses, and the run output directory. The tool does not and cannot check that. `references/ci-eval-trusted.yml` as shipped runs the adapter as the same user, so its results are trusted-mode results, not official verdicts.
 
 Evaluation assets = every file under the eval dir except `runs/`, `pe.py`, `system-manifest.json`, `__pycache__`, `*.pyc`, `.DS_Store`. Symlinks inside the eval dir are refused (BLOCKED).
 
@@ -107,11 +112,11 @@ For every evaluated criterion with `kind: policy`, the spec lists `required_obse
 
 ## 6. Trial records
 
-`trials.jsonl` has one JSON object per attempt, with `schema_version: 1`: run id, case id, slot index, attempt, phase (`initial`, `extra`, `safety`), reason, class, criteria results, `grader_sha256` per criterion, `adapter_sha256`, evidence sha256, start and end times. It is written once, at the end of the run, from records kept in memory (see section 1); its sha256 is in `result.json`. The accumulated state machine of design 3.1 (move, demote, re-review) is not implemented; a later tool can read this file.
+`trials.jsonl` has one JSON object per attempt, with `schema_version: 1`: run id, case id, slot index, attempt, phase (`initial`, `extra`, `safety`), reason, class, criteria results, `grader_sha256` per criterion, `adapter_sha256` (the sha256 of the adapter command line, not of the adapter's code), evidence sha256, start and end times. It is written once, at the end of the run, from records kept in memory (see section 1); its sha256 is in `result.json`. The accumulated state machine of design 3.1 (move, demote, re-review) is not implemented; a later tool can read this file.
 
 ## 7. Schema subset
 
-JSON is read strictly: `NaN`, `Infinity` and `-Infinity` (accepted by Python's parser but not valid JSON) are rejected everywhere. `number` and `integer` reject non-finite values; an integer-valued number such as `1.0` is an `integer`, as in JSON Schema. `items` may be a schema or a boolean (`false` = no items allowed).
+JSON is read strictly: `NaN`, `Infinity` and `-Infinity` (accepted by Python's parser but not valid JSON) are rejected everywhere, and so is a number that overflows to infinity (`1e999`), also inside free-form fields such as `final_state`. `number` and `integer` reject non-finite values; an integer-valued number such as `1.0` is an `integer`, as in JSON Schema. `items` may be a schema or a boolean (`false` = no items allowed).
 
 
 Schemas are real JSON Schema 2020-12 files. The built-in validator supports: `type`, `required`, `properties`, `additionalProperties`, `items`, `enum`, `const`, `oneOf`, `anyOf`, `allOf`, `if`/`then`/`else`, `minItems`, `minLength`, `minimum`, `maximum`, `pattern`, local `$ref` to `#/$defs/...`, and the annotations `$schema`, `$id`, `$defs`, `title`, `description`, `$comment`, `examples`, `default`. **Any other keyword in a schema is BLOCKED**, never ignored. Every `if` lists the discriminating field in its own `required`.
