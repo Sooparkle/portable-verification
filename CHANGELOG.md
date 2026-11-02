@@ -69,7 +69,11 @@ table on top; what the tool promises is fixed in `docs/contracts.md`.
   the test meant for it; recorded in the report, not fixed.
 - Seeded simulation matches the design's gate probabilities (2,000,000 samples per condition, |z| <= 1.01).
 - End-to-end walk-through 8/8; shellcheck 0.11.0 no findings; `check-release.sh v0.1.0` OK.
-- No second external review was done (decision of the maintainer); the fixes are verified by the tests above only.
+- Second external review (Codex, read-only, on e2159ad; `reports/codex-review-r2-v0.2.0.md`): verdict "release after
+  fixes". B2, B3, B5, B8, B9 resolved; B1, B4, B6, B7 partly resolved; three regressions found (records of finished
+  trials are lost when a run aborts; the manifest hash is taken from a re-read without comparison and `result.json` is
+  not read back as the contract says; the executable bit of `exec` graders is no longer required). Not fixed yet;
+  see the report, section 15.
 
 ### Not run / known gaps
 - The workflows of this repository and the planted workflows (`ci-github-actions.yml`, `ci-eval-trusted.yml`) have not run on GitHub.
