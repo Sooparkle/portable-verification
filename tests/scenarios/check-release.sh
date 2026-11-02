@@ -15,8 +15,12 @@ tag="v$version"
 dist="$WORK/dist"
 "$BASH_BIN" "$src/build/build-release.sh" "$dist" >/dev/null 2>&1 || not_ok "build the test archives"
 pv=$(sum256 "$dist/portable-verification-skill-$tag.tar.gz"); pe=$(sum256 "$dist/portable-eval-skill-$tag.tar.gz")
-sed -e "s/^SHA256_VERIFICATION=\"UNSET\"/SHA256_VERIFICATION=\"$pv\"/" -e "s/^SHA256_EVAL=\"UNSET\"/SHA256_EVAL=\"$pe\"/" \
+sed -e "s/^SHA256_VERIFICATION=\"[^\"]*\"/SHA256_VERIFICATION=\"$pv\"/" -e "s/^SHA256_EVAL=\"[^\"]*\"/SHA256_EVAL=\"$pe\"/" \
   "$src/install.sh" > "$src/install.sh.new" && mv "$src/install.sh.new" "$src/install.sh"
+# the pins must be the hashes of the archives built here (whether install.sh had UNSET or a real release pin):
+# another tar/gzip gives other bytes than the released archives
+assert_eq "test install.sh pins the test-built verification archive" "$pv" "$(sed -n 's/^SHA256_VERIFICATION="\([^"]*\)".*/\1/p' "$src/install.sh")"
+assert_eq "test install.sh pins the test-built eval archive" "$pe" "$(sed -n 's/^SHA256_EVAL="\([^"]*\)".*/\1/p' "$src/install.sh")"
 (cd "$src" && git init -q -b main && git add -A && git commit -q -m release && git tag "$tag")
 remote="$WORK/remote.git"; git clone -q --bare "$src" "$remote"
 
