@@ -104,6 +104,15 @@ table on top; what the tool promises is fixed in `docs/contracts.md`.
   Python 3.9 and 3.13 (Linux also runs the real `timeout` path), shellcheck 0.9.0 clean. First run of this repository's
   tests on Linux.
 
+### Verified after release (tag v0.2.0, commit 56f40b2)
+- The first pin commit (d57c2d0) failed CI on Ubuntu: the check-release scenario replaced only `UNSET` pins and so kept
+  the released hashes, which a GNU tar rebuild does not reproduce. Fixed in 56f40b2 (tests only; the archives and pins
+  did not change). That commit is tagged; CI on it: Ubuntu 409 ok, macOS 408 ok, lint ok (run 41444728772).
+- `bash build/check-release.sh v0.2.0 --rebuild --require-identical`: OK (tag in REPO, all five CI jobs, pins, asset
+  hashes, asset content equals the tag's `skills/<skill>/`, rebuilt bytes identical).
+- `install.sh` downloaded from the public v0.2.0 URL installed both skills into an empty project (both hashes ok);
+  `verify.sh` gave NOT RUN (no checks yet) and `pe.py validate` BLOCKED on the placeholders, as designed.
+
 ### Not run / known gaps
 - The planted workflows (`ci-github-actions.yml`, `ci-eval-trusted.yml`) have not run on GitHub (this repository's own CI has).
 - Real LLM agent adapters, LLM judges, blind sets, accumulated case state, YAML input, Windows, `agentskills validate`,
