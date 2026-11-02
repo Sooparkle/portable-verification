@@ -23,8 +23,8 @@
 set -euo pipefail
 
 VERSION="0.2.0"
-SHA256_VERIFICATION="UNSET"       # sha256 of portable-verification-skill-v$VERSION.tar.gz (build/build-release.sh)
-SHA256_EVAL="UNSET"               # sha256 of portable-eval-skill-v$VERSION.tar.gz
+SHA256_VERIFICATION="91d5890e30718e345185ff76fc92cadb87fd090785725dfa7f3377116c7c398a"       # sha256 of portable-verification-skill-v$VERSION.tar.gz (build/build-release.sh)
+SHA256_EVAL="34008d0c1852729d2a9f07cf53d760a1b0dcfcff6033f3936df9b5cd72ec10f2"               # sha256 of portable-eval-skill-v$VERSION.tar.gz
 REPO="Sooparkle/portable-verification"      # owner/name on GitHub
 
 die() { echo "install: $*" >&2; exit 1; }

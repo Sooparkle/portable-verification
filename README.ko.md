@@ -6,7 +6,7 @@
 
 | 스킬 | 답하는 질문 | 실행기 | 성숙도 |
 |---|---|---|---|
-| `portable-verification` | 이 변경이 동작하는가? | `verify.sh`(bash + perl)가 `.verification/checks.txt`에 선언된 검사를 실행 | 테스트됨. v0.1.0으로 릴리스 |
+| `portable-verification` | 이 변경이 동작하는가? | `verify.sh`(bash + perl)가 `.verification/checks.txt`에 선언된 검사를 실행 | 테스트됨. v0.1.0부터 릴리스 |
 | `portable-eval` | 이 에이전트 시스템이 성공 기준을 충족하는가? | `pe.py`(Python 3.9+, 표준 라이브러리만)가 `.eval/`에 선언된 회귀·안전 게이트를 실행 | **실험적(0.x).** Portable-Eval v2.1 설계 중 소규모 팀용 부분집합의 초기 구현 |
 
 두 스킬은 일부러 분리했습니다. 읽는 시점(매 변경 vs. 프롬프트·모델·도구 변경), 신뢰 요건, 성숙도가 다르기 때문입니다. 만나는 곳은 한 곳입니다. eval 게이트는 `checks.txt`의 한 줄입니다.

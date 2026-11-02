@@ -6,7 +6,7 @@ Two agent skills with small, dependency-light runners. A script, not the agent, 
 
 | Skill | Question it answers | Runner | Maturity |
 |---|---|---|---|
-| `portable-verification` | Does this change work? | `verify.sh` (bash + perl) runs the checks declared in `.verification/checks.txt` | Tested; released as v0.1.0 |
+| `portable-verification` | Does this change work? | `verify.sh` (bash + perl) runs the checks declared in `.verification/checks.txt` | Tested; released since v0.1.0 |
 | `portable-eval` | Does this agent system meet its success criteria? | `pe.py` (Python 3.9+, standard library only) runs the regression and safety gates declared in `.eval/` | **Experimental (0.x).** An initial implementation of the small-team subset of the Portable-Eval v2.1 design |
 
 The skills are separate on purpose: different readers (every change vs. prompt/model/tool changes), different trust needs, different maturity. They meet in one place: an eval gate is one line in `checks.txt`.

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-11-02)
 
 ### Added: portable-eval (experimental)
 A second skill, `skills/portable-eval/`: an initial implementation of the small-team subset (section 8) of the
@@ -100,9 +100,12 @@ table on top; what the tool promises is fixed in `docs/contracts.md`.
   `check-release.sh v0.1.0` OK with the v0.1.0 job names. The earlier "compare catch-all" survivor had in fact
   mutated `cmd_validate`'s block; mutants are now split per function and each pattern matches exactly one place.
   shellcheck was not run (not installed here). No third external review.
+- CI on 47a2180 (GitHub Actions run 41440627555): Ubuntu (bash 5.2.21) 407 ok and macOS (bash 3.2.57) 406 ok with
+  Python 3.9 and 3.13 (Linux also runs the real `timeout` path), shellcheck 0.9.0 clean. First run of this repository's
+  tests on Linux.
 
 ### Not run / known gaps
-- The workflows of this repository and the planted workflows (`ci-github-actions.yml`, `ci-eval-trusted.yml`) have not run on GitHub.
+- The planted workflows (`ci-github-actions.yml`, `ci-eval-trusted.yml`) have not run on GitHub (this repository's own CI has).
 - Real LLM agent adapters, LLM judges, blind sets, accumulated case state, YAML input, Windows, `agentskills validate`,
   loading the skills inside each agent tool.
 - CODEOWNERS, required reviews and required checks are repository settings; nothing here enforces or tests them.
