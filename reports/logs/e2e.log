@@ -1,13 +1,14 @@
+# e2e, 2026-11-02T11:49:55Z, commit 1c197dc7111c0ce30f051861e20d93058511425d
 working directory: <tmp>
 ## 1. build both archives and a released-style install.sh
-  archive: <tmp>/dist/portable-eval-skill-v0.2.0.tar.gz
-  sha256:  baad6b3ce25e96a5651b7e9613148b63b81e8f165fb66e3d59c7a0fc5f3f87a0  portable-eval-skill-v0.2.0.tar.gz
-  archive: <tmp>/dist/portable-verification-skill-v0.2.0.tar.gz
-  sha256:  03b9616be7a3141449a710cb01b477c62dfc210c277f711599f2e6e0cce43606  portable-verification-skill-v0.2.0.tar.gz
+  archive: <tmp>
+  sha256:  34008d0c1852729d2a9f07cf53d760a1b0dcfcff6033f3936df9b5cd72ec10f2  portable-eval-skill-v0.2.0.tar.gz
+  archive: <tmp>
+  sha256:  91d5890e30718e345185ff76fc92cadb87fd090785725dfa7f3377116c7c398a  portable-verification-skill-v0.2.0.tar.gz
 ## 2. a small project with its own code
 ## 3. install both skills from the archives
-  install: sha256 ok for portable-verification (03b9616be7a3141449a710cb01b477c62dfc210c277f711599f2e6e0cce43606)
-  install: sha256 ok for portable-eval (baad6b3ce25e96a5651b7e9613148b63b81e8f165fb66e3d59c7a0fc5f3f87a0)
+  install: sha256 ok for portable-verification (91d5890e30718e345185ff76fc92cadb87fd090785725dfa7f3377116c7c398a)
+  install: sha256 ok for portable-eval (34008d0c1852729d2a9f07cf53d760a1b0dcfcff6033f3936df9b5cd72ec10f2)
     created  .claude/skills/portable-verification
     created  .verification/verify.sh
     created  .verification/feature-map.md
@@ -31,15 +32,15 @@ working directory: <tmp>
   ok   validate after filling in (exit 0)
 ## 5. verify.sh: uncommitted files need review, committed ones pass
   ok   first run (exit 2)
-    [pass   ] eval-regression (required: yes, exit 0, 1s)
-    [pass   ] eval-safety (required: yes, exit 0, 0s)
+    [pass   ] eval-regression (required: yes, exit 0, 0s)
+    [pass   ] eval-safety (required: yes, exit 0, 1s)
     STATUS: NEEDS_REVIEW (test/config files CHANGED against main)
   ok   after commit (exit 0)
-    [pass   ] eval-regression (required: yes, exit 0, 1s)
+    [pass   ] eval-regression (required: yes, exit 0, 0s)
     [pass   ] eval-safety (required: yes, exit 0, 0s)
     STATUS: PASS (all 2 required checks passed)
   ok   trusted gate on main (exit 0)
-    MODE: trusted (ref=f74e18277e0acbc4c2afbfc955af9f6fde61ef71)
+    MODE: trusted (ref=030ed66f258751e54bc56a454730a7e845443378)
     warning: case cert-1 has severity 'critical' but none of its criteria is in risk_tiers.critical; the safety gate selects by criteria, so it will not select this case
     [safety    ] egress-1                 pass (trials=3)
     safety: cases=1 families=1 failures=0
@@ -50,17 +51,18 @@ working directory: <tmp>
   ok   verify.sh with a real regression (exit 1)
     [fail   ] eval-regression (required: yes, exit 1, 0s)
     [pass   ] eval-safety (required: yes, exit 0, 1s)
-    STATUS: FAIL (required failures: 1; see .verification/evidence/20261101T134141Z-86775/summary.tsv)
+    STATUS: FAIL (required failures: 1; see .verification/evidence/20261102T114958Z-5210/summary.tsv)
 ## 7. the branch also rewrites the grader so that it always passes
   ok   verify.sh: the cheating grader makes the local gate pass, but the change under .eval/ needs review (exit 2)
     [pass   ] eval-regression (required: yes, exit 0, 0s)
-    [pass   ] eval-safety (required: yes, exit 0, 1s)
+    [pass   ] eval-safety (required: yes, exit 0, 0s)
       flagged: .eval/graders/outcome_check.py
     STATUS: NEEDS_REVIEW (test/config files CHANGED against main)
   local-mode gate exit 0
     MODE: local (unofficial)
     STATUS: PASS (all selected cases passed)
   ok   trusted gate against main: the real regression is a FAIL, not a PASS (exit 1)
-    MODE: trusted (ref=f74e18277e0acbc4c2afbfc955af9f6fde61ef71)
+    MODE: trusted (ref=030ed66f258751e54bc56a454730a7e845443378)
     STATUS: FAIL (failed: cert-1)
 ## done (bad=0)
+# exit 0

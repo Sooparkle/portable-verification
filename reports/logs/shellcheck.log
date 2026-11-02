@@ -1,2 +1,2 @@
-version: 0.11.0
-shellcheck: no findings
+# shellcheck: NOT RUN for commit 1c197dc (shellcheck is not installed on this machine).
+# The previous run (0.11.0, no findings) was for e2159ad; CI runs shellcheck on push.

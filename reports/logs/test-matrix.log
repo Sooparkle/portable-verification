@@ -1,26 +1,13 @@
-# test matrix, 2026-11-01T13:31:58Z, commit 20e5acf + working tree changes:
-#    M CHANGELOG.md
-#    M README.ko.md
-#    M README.md
-#    M build/check-release.sh
-#    M skills/portable-eval/SKILL.md
-#    M skills/portable-eval/docs/contracts.md
-#    M skills/portable-eval/scripts/pe.py
-#    M skills/portable-eval/scripts/plant.sh
-#    M skills/portable-verification/scripts/plant.sh
-#    M tests/py/fixture.py
-#    M tests/py/test_pe.py
-#    M tests/scenarios/consistency.sh
-#    M tests/scenarios/eval.sh
-#    M tests/scenarios/install.sh
-#    M tests/scenarios/plant-eval.sh
-#    M tests/scenarios/plant.sh
-#   ?? reports/logs/
-#   ?? reports/tools/
-=== A: bash 3.2.57 + system python 3.9.6 + jsonschema 4.25.1
+# test matrix, 2026-11-02T11:39:21Z, commit 1c197dc7111c0ce30f051861e20d93058511425d
+# working tree clean (the run tests exactly this commit)
+# tree sha256 of tracked files: bdc14ec5efd32d3b7aaa19c3f076b565c7d4b03f09092b88693585f9511542c3
+=== A: bash 3.2.57 + python 3.9.6 + jsonschema 4.25.1
 # bash under test: /bin/bash
 # GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
 # os: Darwin 25.5.0 arm64
+# --- check-release.sh
+# scenario done: 0 failure(s)
+# check-release.sh: 15 ok, 0 not ok
 # --- consistency.sh
 # scenario done: 0 failure(s)
 # consistency.sh: 17 ok, 0 not ok
@@ -28,10 +15,10 @@
 # python under test: <scratchpad>/venv39/bin/python (Python 3.9.6)
 # jsonschema present: the schema cross-check runs
 # scenario done: 0 failure(s)
-# eval.sh: 103 ok, 0 not ok
+# eval.sh: 112 ok, 0 not ok
 # --- install.sh
 # scenario done: 0 failure(s)
-# install.sh: 97 ok, 0 not ok
+# install.sh: 103 ok, 0 not ok
 # --- plant-eval.sh
 # scenario done: 0 failure(s)
 # plant-eval.sh: 42 ok, 0 not ok
@@ -42,22 +29,25 @@
 # note: timeout/gtimeout not installed here, so the real timeout path was NOT exercised
 # scenario done: 0 failure(s)
 # verify.sh: 56 ok, 0 not ok
-# TOTAL: 376 ok, 0 not ok, 0 scenario(s) crashed
+# TOTAL: 406 ok, 0 not ok, 0 scenario(s) crashed
 === B: bash 3.2.57 + python 3.13.1 + jsonschema 4.26.0
 # bash under test: /bin/bash
 # GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
 # os: Darwin 25.5.0 arm64
+# --- check-release.sh
+# scenario done: 0 failure(s)
+# check-release.sh: 15 ok, 0 not ok
 # --- consistency.sh
 # scenario done: 0 failure(s)
 # consistency.sh: 17 ok, 0 not ok
 # --- eval.sh
-# python under test: <scratchpad>/venv/bin/python (Python 3.13.1)
+# python under test: <scratchpad>/venv313/bin/python (Python 3.13.1)
 # jsonschema present: the schema cross-check runs
 # scenario done: 0 failure(s)
-# eval.sh: 103 ok, 0 not ok
+# eval.sh: 112 ok, 0 not ok
 # --- install.sh
 # scenario done: 0 failure(s)
-# install.sh: 97 ok, 0 not ok
+# install.sh: 103 ok, 0 not ok
 # --- plant-eval.sh
 # scenario done: 0 failure(s)
 # plant-eval.sh: 42 ok, 0 not ok
@@ -68,11 +58,14 @@
 # note: timeout/gtimeout not installed here, so the real timeout path was NOT exercised
 # scenario done: 0 failure(s)
 # verify.sh: 56 ok, 0 not ok
-# TOTAL: 376 ok, 0 not ok, 0 scenario(s) crashed
+# TOTAL: 406 ok, 0 not ok, 0 scenario(s) crashed
 === C: bash 3.2.57 + system python 3.9.6, no jsonschema
 # bash under test: /bin/bash
 # GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
 # os: Darwin 25.5.0 arm64
+# --- check-release.sh
+# scenario done: 0 failure(s)
+# check-release.sh: 15 ok, 0 not ok
 # --- consistency.sh
 # scenario done: 0 failure(s)
 # consistency.sh: 17 ok, 0 not ok
@@ -81,10 +74,10 @@
 # note: jsonschema NOT installed; the schema cross-check test is skipped here
 # skipped: test_cross_check_with_jsonschema
 # scenario done: 0 failure(s)
-# eval.sh: 102 ok, 0 not ok
+# eval.sh: 111 ok, 0 not ok
 # --- install.sh
 # scenario done: 0 failure(s)
-# install.sh: 97 ok, 0 not ok
+# install.sh: 103 ok, 0 not ok
 # --- plant-eval.sh
 # scenario done: 0 failure(s)
 # plant-eval.sh: 42 ok, 0 not ok
@@ -95,11 +88,14 @@
 # note: timeout/gtimeout not installed here, so the real timeout path was NOT exercised
 # scenario done: 0 failure(s)
 # verify.sh: 56 ok, 0 not ok
-# TOTAL: 375 ok, 0 not ok, 0 scenario(s) crashed
-=== A repeat 2
+# TOTAL: 405 ok, 0 not ok, 0 scenario(s) crashed
+=== A, repeat 2
 # bash under test: /bin/bash
 # GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
 # os: Darwin 25.5.0 arm64
+# --- check-release.sh
+# scenario done: 0 failure(s)
+# check-release.sh: 15 ok, 0 not ok
 # --- consistency.sh
 # scenario done: 0 failure(s)
 # consistency.sh: 17 ok, 0 not ok
@@ -107,10 +103,10 @@
 # python under test: <scratchpad>/venv39/bin/python (Python 3.9.6)
 # jsonschema present: the schema cross-check runs
 # scenario done: 0 failure(s)
-# eval.sh: 103 ok, 0 not ok
+# eval.sh: 112 ok, 0 not ok
 # --- install.sh
 # scenario done: 0 failure(s)
-# install.sh: 97 ok, 0 not ok
+# install.sh: 103 ok, 0 not ok
 # --- plant-eval.sh
 # scenario done: 0 failure(s)
 # plant-eval.sh: 42 ok, 0 not ok
@@ -121,11 +117,14 @@
 # note: timeout/gtimeout not installed here, so the real timeout path was NOT exercised
 # scenario done: 0 failure(s)
 # verify.sh: 56 ok, 0 not ok
-# TOTAL: 376 ok, 0 not ok, 0 scenario(s) crashed
-=== A repeat 3
+# TOTAL: 406 ok, 0 not ok, 0 scenario(s) crashed
+=== A, repeat 3
 # bash under test: /bin/bash
 # GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
 # os: Darwin 25.5.0 arm64
+# --- check-release.sh
+# scenario done: 0 failure(s)
+# check-release.sh: 15 ok, 0 not ok
 # --- consistency.sh
 # scenario done: 0 failure(s)
 # consistency.sh: 17 ok, 0 not ok
@@ -133,10 +132,10 @@
 # python under test: <scratchpad>/venv39/bin/python (Python 3.9.6)
 # jsonschema present: the schema cross-check runs
 # scenario done: 0 failure(s)
-# eval.sh: 103 ok, 0 not ok
+# eval.sh: 112 ok, 0 not ok
 # --- install.sh
 # scenario done: 0 failure(s)
-# install.sh: 97 ok, 0 not ok
+# install.sh: 103 ok, 0 not ok
 # --- plant-eval.sh
 # scenario done: 0 failure(s)
 # plant-eval.sh: 42 ok, 0 not ok
@@ -147,31 +146,4 @@
 # note: timeout/gtimeout not installed here, so the real timeout path was NOT exercised
 # scenario done: 0 failure(s)
 # verify.sh: 56 ok, 0 not ok
-# TOTAL: 376 ok, 0 not ok, 0 scenario(s) crashed
-
-=== A again after adding 3 tests for the surviving mutants (code unchanged)
-# bash under test: /bin/bash
-# GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
-# os: Darwin 25.5.0 arm64
-# --- consistency.sh
-# scenario done: 0 failure(s)
-# consistency.sh: 17 ok, 0 not ok
-# --- eval.sh
-# python under test: <scratchpad>/venv39/bin/python (Python 3.9.6)
-# jsonschema present: the schema cross-check runs
-# scenario done: 0 failure(s)
-# eval.sh: 105 ok, 0 not ok
-# --- install.sh
-# scenario done: 0 failure(s)
-# install.sh: 97 ok, 0 not ok
-# --- plant-eval.sh
-# scenario done: 0 failure(s)
-# plant-eval.sh: 42 ok, 0 not ok
-# --- plant.sh
-# scenario done: 0 failure(s)
-# plant.sh: 61 ok, 0 not ok
-# --- verify.sh
-# note: timeout/gtimeout not installed here, so the real timeout path was NOT exercised
-# scenario done: 0 failure(s)
-# verify.sh: 56 ok, 0 not ok
-# TOTAL: 378 ok, 0 not ok, 0 scenario(s) crashed
+# TOTAL: 406 ok, 0 not ok, 0 scenario(s) crashed

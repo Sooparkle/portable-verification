@@ -1,0 +1,31 @@
+# check-release against the published v0.1.0, 2026-11-02T11:50:48Z, checker from commit 1c197dc7111c0ce30f051861e20d93058511425d
+## 1. default expected jobs (the v0.2.0 matrix): must fail, v0.1.0 had other job names
+check-release: v0.1.0
+  tag commit: 3653674c8417532ca258bf1371f89ccccece5d2e
+  repository: Sooparkle/portable-verification
+  ok    install.sh VERSION (0.1.0) matches the tag
+  ok    tag in Sooparkle/portable-verification points to the same commit
+        CI: test (macos-latest)	success
+        CI: test (ubuntu-latest)	success
+        CI: lint	success
+  ok    every check run on the tagged commit succeeded
+  FAIL  expected CI jobs missing: [test (ubuntu-latest, 3.9)] [test (ubuntu-latest, 3.13)] [test (macos-latest, 3.9)] [test (macos-latest, 3.13)]
+  ok    portable-verification-skill-v0.1.0.tar.gz: sha256 of the release asset equals the pin (c92cff0f6476432ca6299638f7bfb5c47cff1fa6bd9fd88a929720c961cae125)
+  ok    portable-verification-skill-v0.1.0.tar.gz: content (files, bytes, executable bits) equals skills/portable-verification at v0.1.0
+
+check-release: FAILED
+## 2. --expect-checks with the v0.1.0 job names
+check-release: v0.1.0
+  tag commit: 3653674c8417532ca258bf1371f89ccccece5d2e
+  repository: Sooparkle/portable-verification
+  ok    install.sh VERSION (0.1.0) matches the tag
+  ok    tag in Sooparkle/portable-verification points to the same commit
+        CI: test (macos-latest)	success
+        CI: test (ubuntu-latest)	success
+        CI: lint	success
+  ok    every check run on the tagged commit succeeded
+  ok    all expected CI jobs are present (lint;test (ubuntu-latest);test (macos-latest))
+  ok    portable-verification-skill-v0.1.0.tar.gz: sha256 of the release asset equals the pin (c92cff0f6476432ca6299638f7bfb5c47cff1fa6bd9fd88a929720c961cae125)
+  ok    portable-verification-skill-v0.1.0.tar.gz: content (files, bytes, executable bits) equals skills/portable-verification at v0.1.0
+
+check-release: OK

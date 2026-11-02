@@ -69,6 +69,7 @@ table on top; what the tool promises is fixed in `docs/contracts.md`.
   the test meant for it; recorded in the report, not fixed.
 - Seeded simulation matches the design's gate probabilities (2,000,000 samples per condition, |z| <= 1.01).
 - End-to-end walk-through 8/8; shellcheck 0.11.0 no findings; `check-release.sh v0.1.0` OK.
+- (These numbers are for e2159ad; the final numbers are under "Fixed after the second review" below.)
 - Second external review (Codex, read-only, on e2159ad; `reports/codex-review-r2-v0.2.0.md`): verdict "release after
   fixes". B2, B3, B5, B8, B9 resolved; B1, B4, B6, B7 partly resolved; three regressions found (records of finished
   trials are lost when a run aborts; the manifest hash is taken from a re-read without comparison and `result.json` is
@@ -94,6 +95,11 @@ table on top; what the tool promises is fixed in `docs/contracts.md`.
   (races by an escaped process, start-up code in a writable Python installation, rewriting the run directory) and what
   another OS user or container must not be able to write. `adapter_sha256` is documented as the hash of the command
   line, not of the adapter's code.
+- Verified on commit 1c197dc (clean tree; macOS, bash 3.2.57): full suite five times, 0 failures (406 ok; 405 without
+  jsonschema; Python 3.9.6 and 3.13.1); mutation checks 41 of 41 caught; e2e 8/8; simulation unchanged;
+  `check-release.sh v0.1.0` OK with the v0.1.0 job names. The earlier "compare catch-all" survivor had in fact
+  mutated `cmd_validate`'s block; mutants are now split per function and each pattern matches exactly one place.
+  shellcheck was not run (not installed here). No third external review.
 
 ### Not run / known gaps
 - The workflows of this repository and the planted workflows (`ci-github-actions.yml`, `ci-eval-trusted.yml`) have not run on GitHub.
